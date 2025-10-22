@@ -1,0 +1,59 @@
+<div class="events-container">
+  <header class="events-header">
+    <h1>{{agenda.dia }}</h1>
+  </header>
+
+  <div *ngIf="loading" class="loading">
+    <div class="spinner"></div>
+    <p>Cargando eventos...</p>
+  </div>
+
+  <div *ngIf="error && !loading" class="error">
+    <p>{{ error }}</p>
+    <button (click)="loadEvents()" class="retry-button">Reintentar</button>
+  </div>
+
+  <div *ngIf="!loading && !error && events.length === 0" class="no-events">
+    <div class="empty-state">
+      <svg class="empty-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+      </svg>
+      <h2>No hay eventos disponibles</h2>
+      <p>Vuelve más tarde para ver los próximos eventos deportivos</p>
+    </div>
+  </div>
+
+  <div *ngIf="!loading && !error && events.length > 0" class="events-grid">
+    <div
+      *ngFor="let event of events"
+      class="event-card"
+    >
+      <div class="event-content">
+        <h3 class="event-title">{{ event.titulo }}</h3>
+
+        <div class="event-time">
+          <svg class="event-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <span>Hora: {{ event.hora }}</span>
+        </div>
+
+        <div class="event-category">
+          <svg class="event-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
+          </svg>
+          <span>Categoría: {{ event.categoria }}</span>
+        </div>
+
+        <div class="event-channels" *ngIf="event.enlaces && event.enlaces.length > 0">
+          <h4>Canales disponibles:</h4>
+          <ul>
+            <li *ngFor="let enlace of event.enlaces" (click)="openChannel(enlace)" class="channel-item">
+              {{ enlace.canal }}
+            </li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

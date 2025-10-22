@@ -32,6 +32,17 @@
   background: #000;
 }
 
+/* Video.js specific styles */
+.video-js {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 16 / 9;
+}
+
+.video-js .vjs-tech {
+  position: relative;
+}
+
 .controls {
   position: absolute;
   bottom: 0;
@@ -42,6 +53,7 @@
   opacity: 0;
   transition: opacity 0.3s ease;
   pointer-events: none;
+  z-index: 10;
 }
 
 .controls.visible {

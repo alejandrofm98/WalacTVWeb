@@ -59,7 +59,8 @@
               "buildTarget": "walactvWeb:build:production"
             },
             "development": {
-              "buildTarget": "walactvWeb:build:development"
+              "buildTarget": "walactvWeb:build:development",
+              "proxyConfig": "proxy.conf.json"
             }
           },
           "defaultConfiguration": "development"

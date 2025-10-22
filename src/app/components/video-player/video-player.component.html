@@ -6,9 +6,11 @@
        (mouseleave)="onMouseLeave()">
     <video
       #videoElement
-      class="video-element"
+      class="video-element video-js vjs-default-skin"
       playsinline
-    ></video>
+      preload="auto"
+      data-setup="{}">
+    </video>
 
     <div class="controls" [class.visible]="showControls">
     <div class="controls-wrapper">
