@@ -1,9 +1,10 @@
-import{ Component, OnInit, inject } from '@angular/core';
-import { CommonModule } from '@angular/common';
-import { Router } from '@angular/router';
-import { DataService } from '../../services/data.service';
-import { Observable } from 'rxjs';
-import { Agenda, Events, Enlaces } from '../../models';
+import {Component, OnInit, inject} from '@angular/core';
+import {CommonModule} from '@angular/common';
+import {Router} from '@angular/router';
+import {DataService} from '../../services/data.service';
+import {PlayerStateService} from '../../services/player-state.service';
+import {Agenda, Events, Enlaces} from '../../models';
+import {slugify} from '../../utils/slugify';
 
 @Component({
   selector: 'app-events-list',
@@ -19,62 +20,45 @@ export class EventsListComponent implements OnInit {
   private dataService = inject(DataService);
 
   constructor(
-    private router: Router
-  ) {}
+    private router: Router,
+    private playerState: PlayerStateService
+  ) {
+  }
 
   ngOnInit() {
     this.loadEvents();
   }
 
   loadEvents() {
-    try {
-      this.loading = true;
-      this.error = null;
+    this.loading = true;
+    this.error = null;
 
-      // Using the data service instead of Supabase directly
-      const items$ = this.dataService.getItems();
-
-      items$.subscribe({
-        next: (data) => {
-          // Assuming the data is an array of Agenda items
-          if (data) {
-            this.agenda = data as Agenda;
-            this.events = this.agenda.eventos || [];
-          } else {
-            this.events= [];
-          }
-          this.loading = false;
-        },
-        error: (err) => {
-          this.error = err.message || 'Error al cargar eventos';
-          console.error('Error loading events:', err);
-          this.loading = false;
-        }
-      });
-    } catch (err: any) {
-      this.error= err.message || 'Error al cargar eventos';
-      console.error('Error loading events:', err);
-      this.loading = false;
-    }
+    this.dataService.getItems().subscribe({
+      next: (data) => {
+        this.agenda = data as Agenda;
+        this.events = this.agenda.eventos || [];
+        this.loading = false;
+      },
+      error: (err) => {
+        this.error = err.message || 'Error al cargar eventos';
+        console.error('Error loading events:', err);
+        this.loading = false;
+      }
+    });
   }
 
   openEvent(event: Events) {
-    // TODO: Implement navigation to event
-    console.log('Opening event:', event);
+    const slug = slugify(event.titulo);
+
+    // Guardamos el evento completo en el servicio de estado
+    this.playerState.setEvent(event);
+
+    // Navegamos con el slug limpio
+    this.router.navigate(['/player', slug]);
   }
 
-openChannel(enlace: Enlaces) {
-  // Pasar solo un ID seguro
-  this.router.navigate(['/player'], {
-    queryParams: {
-      streamId: enlace.m3u8, // ID interno del canal/evento
-      channelName: enlace.canal
-    }
-  });
-}
 
-
-  formatTime(time: string):string {
+  formatTime(time: string): string {
     return time.substring(0, 5);
   }
 
@@ -88,4 +72,5 @@ openChannel(enlace: Enlaces) {
     };
     return names[category] || category;
   }
+
 }

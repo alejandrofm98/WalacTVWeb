@@ -6,12 +6,17 @@ import {
   Input,
   OnDestroy,
   ChangeDetectorRef,
-  OnInit
+  OnInit,
+  inject
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ActivatedRoute } from '@angular/router';
 import { ChannelOption } from '../../models/channel-option.model';
+import { DataService } from '../../services/data.service';
+import { PlayerStateService } from '../../services/player-state.service';
 import Hls from 'hls.js';
+import { Events } from '../../models';
+import {slugify} from '../../utils/slugify';
 
 @Component({
   selector: 'app-video-player',
@@ -25,13 +30,20 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
   @Input() eventTitle: string = 'Reproducción en vivo';
 
   private hls?: Hls;
+  private shouldInitializePlayer = false;
+  private dataService = inject(DataService);
+  private playerState = inject(PlayerStateService);
+  private cdr = inject(ChangeDetectorRef);
+
   isPlaying = false;
   volume = 1;
   isMuted = false;
   showControls = true;
   private hideControlsTimeout?: number;
-  private shouldInitializePlayer = false;
 
+  eventData?: Events;
+
+  // Opciones de canales (para mantener compatibilidad con tu HTML)
   channel1Options: ChannelOption[] = [
     { label: 'Opción 1', value: 'option1' },
     { label: 'Opción 2', value: 'option2' },
@@ -49,42 +61,43 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
   selectedChannel1Option = 'option1';
   selectedChannel2Option = 'option1';
 
-  constructor(
-    private route: ActivatedRoute,
-    private cdr: ChangeDetectorRef
-  ) {}
+  constructor(private route: ActivatedRoute) {}
 
   ngOnInit() {
-    this.route.queryParams.subscribe(params => {
-      if (params['streamId']) {
-        const streamIdParam = params['streamId'];
-        const streamIdStr = Array.isArray(streamIdParam) ? streamIdParam[0] : streamIdParam;
+  this.route.paramMap.subscribe(params => {
+    const slug = params.get('title');
+    if (slug) {
+      // Lo convertimos a algo parecido al título original
+      const decodedTitle = slug.replace(/-/g, ' ');
+      this.eventTitle = decodedTitle;
+    }
 
-        console.log('📥 streamId recibido:', streamIdStr);
+    // Intentamos recuperar el evento desde PlayerStateService
+    const savedEvent = this.playerState.getEvent();
+    if (savedEvent) {
+      this.eventData = savedEvent;
+      this.loadStreamFromEvent();
+      return;
+    }
 
-        try {
-          const url = new URL(streamIdStr);
-
-          if (url.toString().startsWith('http://127.0.0.1:6878')) {
-            const id = url.searchParams.get('id');
-            this.streamUrl = '/apiace/ace/manifest.m3u8?id=' + id;
-          } else if (url.toString().startsWith('https://walactv.walerike.com/proxy?url=')) {
-            const fullUrl = url.toString();
-            this.streamUrl = fullUrl.replace('https://walactv.walerike.com', '/apiwalactv');
-          } else {
-            this.streamUrl = streamIdStr;
-          }
-        } catch (e) {
-          console.error('⚠️ Error parsing URL:', e);
-          this.streamUrl = streamIdParam;
+    // Si no existe, buscamos en el DataService por título aproximado
+    this.dataService.getItems().subscribe({
+      next: (data) => {
+        if (!data?.eventos) return;
+        const foundEvent = data.eventos.find((e: Events) =>
+          slugify(e.titulo) === slug
+        );
+        if (foundEvent) {
+          this.eventData = foundEvent;
+          this.loadStreamFromEvent();
+        } else {
+          console.warn('❌ Evento no encontrado para el slug:', slug);
         }
-
-        console.log('🔗 URL final del stream:', this.streamUrl);
-        this.eventTitle = params['channelName'] || this.eventTitle;
-        this.shouldInitializePlayer = true;
-      }
+      },
+      error: (err) => console.error('❌ Error al cargar eventos:', err)
     });
-  }
+  });
+}
 
   ngAfterViewInit() {
     if (this.shouldInitializePlayer) {
@@ -103,14 +116,46 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   /** =========================================================
+   * 🔄 Cargar stream desde los datos del evento
+   * ========================================================= */
+  private loadStreamFromEvent() {
+    if (!this.eventData?.enlaces?.length) return;
+
+    const enlace = this.eventData.enlaces[0].m3u8[0];
+    if (!enlace) return;
+
+    // Si la URL apunta a un proxy o ACE Stream, la adaptamos
+    try {
+      const url = new URL(enlace);
+
+      if (url.toString().startsWith('http://127.0.0.1:6878')) {
+        const id = url.searchParams.get('id');
+        this.streamUrl = '/apiace/ace/manifest.m3u8?id=' + id;
+      } else if (url.toString().startsWith('https://walactv.walerike.com/proxy?url=')) {
+        const fullUrl = url.toString();
+        this.streamUrl = fullUrl.replace('https://walactv.walerike.com', '/apiwalactv');
+      } else {
+        this.streamUrl = enlace;
+      }
+    } catch (e) {
+      console.error('⚠️ Error parseando la URL del stream:', e);
+      this.streamUrl = enlace;
+    }
+
+    this.shouldInitializePlayer = true;
+    this.cdr.detectChanges();
+    this.initializePlayer();
+  }
+
+  /** =========================================================
    * 🎬 Inicializar HLS.js
    * ========================================================= */
-  private async initializePlayer() {
+  private initializePlayer() {
     const video = this.videoElement.nativeElement;
     const urlToUse = Array.isArray(this.streamUrl) ? this.streamUrl[0] : this.streamUrl;
 
     if (!urlToUse) {
-      console.error('❌ No stream URL provided');
+      console.error('❌ No hay stream URL');
       return;
     }
 
@@ -139,12 +184,12 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
         console.error('⚠️ HLS.js error:', data);
       });
     } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-      // Safari nativo
+      // Soporte nativo (Safari)
       video.src = urlToUse;
       video.addEventListener('loadedmetadata', () => video.play());
     }
 
-    // Listeners básicos
+    // Eventos de control
     video.addEventListener('play', () => {
       this.isPlaying = true;
       this.cdr.markForCheck();
@@ -160,7 +205,7 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
     });
   }
 
-  // 🎮 Controles del reproductor
+  // 🎮 Controles de reproducción
   togglePlayPause() {
     const video = this.videoElement.nativeElement;
     if (video.paused) video.play().catch(err => console.error('❌ Error al reproducir:', err));
@@ -202,6 +247,7 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
     }
   }
 
+  // 🔘 Métodos de selección de canales (los que faltaban)
   selectChannel1Option(value: string) {
     this.selectedChannel1Option = value;
   }

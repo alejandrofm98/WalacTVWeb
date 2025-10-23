@@ -4,6 +4,6 @@ import { EventsListComponent } from './components/events-lists/events-list.compo
 
 export const routes: Routes = [
   { path: '', component: EventsListComponent, pathMatch: 'full' },
-  { path: 'player', component: VideoPlayerComponent },
+  { path: 'player/:title', component: VideoPlayerComponent },
   { path: '**', redirectTo: '' } // Catch-all route that redirects to the events list
 ];

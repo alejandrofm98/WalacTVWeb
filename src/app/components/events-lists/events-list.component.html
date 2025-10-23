@@ -48,7 +48,7 @@
         <div class="event-channels" *ngIf="event.enlaces && event.enlaces.length > 0">
           <h4>Canales disponibles:</h4>
           <ul>
-            <li *ngFor="let enlace of event.enlaces" (click)="openChannel(enlace)" class="channel-item">
+            <li *ngFor="let enlace of event.enlaces" (click)="openEvent(event)" class="channel-item">
               {{ enlace.canal }}
             </li>
           </ul>
