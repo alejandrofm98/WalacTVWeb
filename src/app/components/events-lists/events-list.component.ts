@@ -5,10 +5,12 @@ import {DataService} from '../../services/data.service';
 import {PlayerStateService} from '../../services/player-state.service';
 import {Agenda, Events, Enlaces} from '../../models';
 import {slugify} from '../../utils/slugify';
+import {HomeButton} from '../../shared/components/home-button/home-button';
 
 @Component({
   selector: 'app-events-list',
-  imports: [CommonModule],
+  standalone: true,
+  imports: [CommonModule, HomeButton],
   templateUrl: './events-list.component.html',
   styleUrls: ['./events-list.component.css']
 })

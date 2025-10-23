@@ -1,4 +1,5 @@
 <div class="player-wrapper">
+  <app-home-button></app-home-button>
   <h1 class="event-title">{{ eventTitle }}</h1>
 
   <div class="video-container"
@@ -13,94 +14,66 @@
     </video>
 
     <div class="controls" [class.visible]="showControls">
-    <div class="controls-wrapper">
-      <div class="controls-left">
-        <button
-          class="control-button play-button"
-          (click)="togglePlayPause()"
-          [attr.aria-label]="isPlaying ? 'Pausar' : 'Reproducir'"
-        >
-          <svg *ngIf="!isPlaying" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M8 5v14l11-7z"/>
-          </svg>
-          <svg *ngIf="isPlaying" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z"/>
-          </svg>
-        </button>
-
-        <div class="volume-control">
+      <div class="controls-wrapper">
+        <div class="controls-left">
           <button
-            class="control-button"
-            (click)="toggleMute()"
-            [attr.aria-label]="isMuted ? 'Activar sonido' : 'Silenciar'"
-          >
-            <svg *ngIf="!isMuted && volume > 0.5" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/>
+            class="control-button play-button"
+            (click)="togglePlayPause()"
+            [attr.aria-label]="isPlaying ? 'Pausar' : 'Reproducir'">
+            <svg *ngIf="!isPlaying" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M8 5v14l11-7z"/>
             </svg>
-            <svg *ngIf="!isMuted && volume <= 0.5 && volume > 0" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M7 9v6h4l5 5V4l-5 5H7zm11.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02z"/>
-            </svg>
-            <svg *ngIf="isMuted || volume === 0" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z"/>
+            <svg *ngIf="isPlaying" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z"/>
             </svg>
           </button>
 
-          <input
-            type="range"
-            class="volume-slider"
-            min="0"
-            max="1"
-            step="0.01"
-            [value]="volume"
-            (input)="setVolume($event)"
-            aria-label="Control de volumen"
-          >
+          <div class="volume-control">
+            <button class="control-button" (click)="toggleMute()">
+              <svg *ngIf="!isMuted && volume > 0" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M3 9v6h4l5 5V4L7 9H3z"/>
+              </svg>
+              <svg *ngIf="isMuted || volume === 0" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45z"/>
+              </svg>
+            </button>
+
+            <input type="range" min="0" max="1" step="0.01" [value]="volume"
+                   (input)="setVolume($event)">
+          </div>
         </div>
 
-      </div>
-
-      <div class="controls-right">
-        <button
-          class="control-button"
-          (click)="toggleFullscreen()"
-          aria-label="Pantalla completa"
-        >
-          <svg viewBox="0 0 24 24" fill="currentColor">
-            <path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/>
-          </svg>
-        </button>
+        <div class="controls-right">
+          <button class="control-button" (click)="toggleFullscreen()">
+            <svg viewBox="0 0 24 24" fill="currentColor">
+              <path
+                d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/>
+            </svg>
+          </button>
+        </div>
       </div>
     </div>
   </div>
-  </div>
 
-  <div class="channel-options">
-    <div class="channel-section">
-      <h3 class="channel-title">Canal 1</h3>
-      <div class="options-row">
-        <button
-          *ngFor="let option of channel1Options"
-          class="option-button"
-          [class.active]="selectedChannel1Option === option.value"
-          (click)="selectChannel1Option(option.value)"
-        >
-          {{ option.label }}
-        </button>
-      </div>
-    </div>
+  <!-- Botones dinámicos por canal -->
+  <div class="channel-options" *ngIf="eventData?.enlaces?.length">
 
-    <div class="channel-section">
-      <h3 class="channel-title">Canal 2</h3>
-      <div class="options-row">
-        <button
-          *ngFor="let option of channel2Options"
-          class="option-button"
-          [class.active]="selectedChannel2Option === option.value"
-          (click)="selectChannel2Option(option.value)"
-        >
-          {{ option.label }}
-        </button>
+    <ng-container *ngFor="let enlace of eventData?.enlaces">
+      <div class="channel-section" *ngIf="enlace.m3u8?.length">
+        <h3 class="channel-title">{{ enlace.canal }}</h3>
+        <div class="options-row">
+          <div>
+             {{ enlace.canal }}
+          </div>
+          <button
+            *ngFor="let stream of enlace.m3u8; let i = index"
+            class="option-button"
+            [class.active]="stream === currentOriginalUrl"
+            (click)="changeStream(stream)">
+            Opción {{ i + 1 }}
+          </button>
+        </div>
       </div>
-    </div>
+    </ng-container>
   </div>
 </div>
