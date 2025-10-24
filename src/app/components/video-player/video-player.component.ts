@@ -18,11 +18,12 @@ import Hls from 'hls.js';
 import {Events} from '../../models';
 import {slugify} from '../../utils/slugify';
 import {HomeButton} from '../../shared/components/home-button/home-button';
+import {NavbarComponent} from '../../shared/components/navbar-component/navbar.component';
 
 @Component({
   selector: 'app-video-player',
   standalone: true,
-  imports: [CommonModule, HomeButton],
+  imports: [CommonModule, HomeButton, NavbarComponent],
   templateUrl: './video-player.component.html',
   styleUrls: ['./video-player.component.css']
 })

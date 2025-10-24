@@ -6,11 +6,12 @@ import {PlayerStateService} from '../../services/player-state.service';
 import {Agenda, Events, Enlaces} from '../../models';
 import {slugify} from '../../utils/slugify';
 import {HomeButton} from '../../shared/components/home-button/home-button';
+import {NavbarComponent} from '../../shared/components/navbar-component/navbar.component';
 
 @Component({
   selector: 'app-events-list',
   standalone: true,
-  imports: [CommonModule, HomeButton],
+  imports: [CommonModule, HomeButton, NavbarComponent],
   templateUrl: './events-list.component.html',
   styleUrls: ['./events-list.component.css']
 })
