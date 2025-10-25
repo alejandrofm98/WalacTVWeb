@@ -1,18 +1,18 @@
-# Etapa 1: Build
+# Etapa 1: Build de Angular
 FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-# Copiar archivos de dependencias desde la raíz
+# Copiar archivos de dependencias
 COPY package*.json ./
 
 # Instalar dependencias
 RUN npm ci --legacy-peer-deps
 
-# Copiar el código fuente desde la raíz
+# Copiar todo el código fuente
 COPY . .
 
-# Las variables se pasan como ARG
+# ARGs que vienen de Dokploy
 ARG API_URL
 ARG APP_NAME
 ARG FIREBASE_API_KEY
@@ -23,26 +23,31 @@ ARG FIREBASE_STORAGE_BUCKET
 ARG FIREBASE_MESSAGING_SENDER_ID
 ARG FIREBASE_APP_ID
 
-# Reemplazar las variables en environment.prod.ts antes del build
-RUN sed -i "s|\${API_URL}|${API_URL}|g" src/environments/environment.prod.ts && \
-    sed -i "s|\${APP_NAME}|${APP_NAME}|g" src/environments/environment.prod.ts && \
-    sed -i "s|\${FIREBASE_API_KEY}|${FIREBASE_API_KEY}|g" src/environments/environment.prod.ts && \
-    sed -i "s|\${FIREBASE_AUTH_DOMAIN}|${FIREBASE_AUTH_DOMAIN}|g" src/environments/environment.prod.ts && \
-    sed -i "s|\${FIREBASE_DATABASE_URL}|${FIREBASE_DATABASE_URL}|g" src/environments/environment.prod.ts && \
-    sed -i "s|\${FIREBASE_PROJECT_ID}|${FIREBASE_PROJECT_ID}|g" src/environments/environment.prod.ts && \
-    sed -i "s|\${FIREBASE_STORAGE_BUCKET}|${FIREBASE_STORAGE_BUCKET}|g" src/environments/environment.prod.ts && \
-    sed -i "s|\${FIREBASE_MESSAGING_SENDER_ID}|${FIREBASE_MESSAGING_SENDER_ID}|g" src/environments/environment.prod.ts && \
-    sed -i "s|\${FIREBASE_APP_ID}|${FIREBASE_APP_ID}|g" src/environments/environment.prod.ts
+# 🔧 Crear environment.ts dinámicamente para que Angular compile correctamente
+RUN echo "export const environment = { \
+  production: true, \
+  apiUrl: '${API_URL}', \
+  appName: '${APP_NAME}', \
+  firebase: { \
+    apiKey: '${FIREBASE_API_KEY}', \
+    authDomain: '${FIREBASE_AUTH_DOMAIN}', \
+    databaseURL: '${FIREBASE_DATABASE_URL}', \
+    projectId: '${FIREBASE_PROJECT_ID}', \
+    storageBucket: '${FIREBASE_STORAGE_BUCKET}', \
+    messagingSenderId: '${FIREBASE_MESSAGING_SENDER_ID}', \
+    appId: '${FIREBASE_APP_ID}' \
+  } \
+};" > src/environments/environment.ts
 
-# Build de producción
+# Compilar Angular en modo producción
 RUN npm run build -- --configuration production
 
-# Etapa 2: Servir con Node (http-server)
+# Etapa 2: Servir con http-server
 FROM node:20-alpine
 
 WORKDIR /app
 
-# Instalar http-server para servir archivos estáticos
+# Instalar http-server globalmente
 RUN npm install -g http-server
 
 # Copiar los archivos compilados
