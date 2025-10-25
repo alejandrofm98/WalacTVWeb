@@ -19,8 +19,6 @@ services:
     restart: unless-stopped
     networks:
       - angular-network
-    profiles:
-      - prod
 
 networks:
   angular-network:
