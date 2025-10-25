@@ -1,6 +1,6 @@
 {
   "name": "walactv-web",
-  "version": "0.0.0",
+  "version": "0.0.1",
   "scripts": {
     "ng": "ng",
     "start": "ng serve --proxy-config proxy.conf.json",
@@ -42,6 +42,7 @@
     "@angular/cli": "^20.3.4",
     "@angular/compiler-cli": "^20.3.4",
     "@types/jasmine": "~5.1.0",
+    "@types/node": "^24.9.1",
     "@types/uuid": "^10.0.0",
     "jasmine-core": "~5.9.0",
     "karma": "~6.4.0",

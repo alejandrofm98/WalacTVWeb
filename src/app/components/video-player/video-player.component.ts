@@ -1,29 +1,27 @@
 import {
+  AfterViewInit,
+  ChangeDetectorRef,
   Component,
   ElementRef,
-  ViewChild,
-  AfterViewInit,
+  inject,
   Input,
   OnDestroy,
-  ChangeDetectorRef,
   OnInit,
-  inject
+  ViewChild
 } from '@angular/core';
 import {CommonModule} from '@angular/common';
 import {ActivatedRoute} from '@angular/router';
-import {ChannelOption} from '../../models/channel-option.model';
 import {DataService} from '../../services/data.service';
 import {PlayerStateService} from '../../services/player-state.service';
 import Hls from 'hls.js';
 import {Events} from '../../models';
 import {slugify} from '../../utils/slugify';
-import {HomeButton} from '../../shared/components/home-button/home-button';
 import {NavbarComponent} from '../../shared/components/navbar-component/navbar.component';
 
 @Component({
   selector: 'app-video-player',
   standalone: true,
-  imports: [CommonModule, HomeButton, NavbarComponent],
+  imports: [CommonModule, NavbarComponent],
   templateUrl: './video-player.component.html',
   styleUrls: ['./video-player.component.css']
 })
@@ -47,7 +45,8 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
   eventData?: Events;
   currentOriginalUrl: string = ''; // Para comparar con los botones
 
-  constructor(private route: ActivatedRoute) {}
+  constructor(private route: ActivatedRoute) {
+  }
 
   ngOnInit() {
     this.route.paramMap.subscribe(params => {

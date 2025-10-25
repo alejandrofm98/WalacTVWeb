@@ -1,0 +1,27 @@
+services:
+  angular-prod:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      args:
+        - API_URL=${API_URL:-http://localhost:3000}
+        - APP_NAME=${APP_NAME:-WalactWeb}
+        - FIREBASE_API_KEY=${FIREBASE_API_KEY}
+        - FIREBASE_AUTH_DOMAIN=${FIREBASE_AUTH_DOMAIN}
+        - FIREBASE_DATABASE_URL=${FIREBASE_DATABASE_URL}
+        - FIREBASE_PROJECT_ID=${FIREBASE_PROJECT_ID}
+        - FIREBASE_STORAGE_BUCKET=${FIREBASE_STORAGE_BUCKET}
+        - FIREBASE_MESSAGING_SENDER_ID=${FIREBASE_MESSAGING_SENDER_ID}
+        - FIREBASE_APP_ID=${FIREBASE_APP_ID}
+    container_name: angular-prod
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+    networks:
+      - angular-network
+    profiles:
+      - prod
+
+networks:
+  angular-network:
+    driver: bridge
