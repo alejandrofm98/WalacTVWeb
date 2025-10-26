@@ -43,4 +43,5 @@ Thumbs.db
 
 /src/environments/environment.ts
 /src/environments/.env
-docker/.env
+!/docker/.env
+!/src/environments/.env
