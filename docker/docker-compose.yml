@@ -5,7 +5,7 @@ services:
       dockerfile: docker/Dockerfile
       args:
         - API_WALACTV=${API_URL:-https://walactv.walerike.com/apiwalactv}
-        - ACE_STREAM_HOST=${ACE_STREAM_HOST:-http://acestream-arm:6878}
+        - ACE_STREAM_HOST=${ACE_STREAM_HOST:-https://walactv.walerike.com/acestream}
         - APP_NAME=${APP_NAME:-WalactWeb}
         - FIREBASE_API_KEY=${FIREBASE_API_KEY}
         - FIREBASE_AUTH_DOMAIN=${FIREBASE_AUTH_DOMAIN}
