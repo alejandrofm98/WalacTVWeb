@@ -13,7 +13,7 @@ RUN npm ci --legacy-peer-deps
 COPY . .
 
 # ARGs que vienen de Dokploy
-ARG API_URL
+ARG API_WALACTV
 ARG APP_NAME
 ARG FIREBASE_API_KEY
 ARG FIREBASE_AUTH_DOMAIN
