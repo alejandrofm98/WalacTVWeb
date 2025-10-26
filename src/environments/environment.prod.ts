@@ -2,6 +2,7 @@
 export const environment = {
   production: true,
   apiWalactv: '${API_WALACTV}',
+  acestreamHost: '${ACE_STREAM_HOST}',
   appName: '${APP_NAME}',
   firebase: {
     apiKey: '${FIREBASE_API_KEY}',
