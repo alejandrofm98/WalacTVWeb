@@ -4,7 +4,7 @@ services:
       context: ..
       dockerfile: docker/Dockerfile
       args:
-        - API_URL=${API_URL:-http://localhost:3000}
+        - API_WALACTV=${API_URL:-https://walactv.walerike.com/apiwalactv}
         - APP_NAME=${APP_NAME:-WalactWeb}
         - FIREBASE_API_KEY=${FIREBASE_API_KEY}
         - FIREBASE_AUTH_DOMAIN=${FIREBASE_AUTH_DOMAIN}

@@ -26,7 +26,7 @@ ARG FIREBASE_APP_ID
 # 🔧 Crear environment.ts dinámicamente para que Angular compile correctamente
 RUN echo "export const environment = { \
   production: true, \
-  apiUrl: '${API_URL}', \
+  apiWalactv: '${API_WALACTV}', \
   appName: '${APP_NAME}', \
   firebase: { \
     apiKey: '${FIREBASE_API_KEY}', \
