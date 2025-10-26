@@ -5,7 +5,7 @@ services:
       dockerfile: docker/Dockerfile
       args:
         - API_WALACTV=${API_URL:-https://walactv.walerike.com/apiwalactv}
-        - ACE_STREAM_HOST=${ACE_STREAM_HOST:-https://walactv.walerike.com/acestream}
+        - ACE_STREAM_HOST=${ACE_STREAM_HOST:-http://acestream-arm:6878}
         - APP_NAME=${APP_NAME:-WalactWeb}
         - FIREBASE_API_KEY=${FIREBASE_API_KEY}
         - FIREBASE_AUTH_DOMAIN=${FIREBASE_AUTH_DOMAIN}
@@ -21,27 +21,27 @@ services:
     networks:
       - walactv-network
 
-  angular-dev:
-    build:
-      context: ..
-      dockerfile: docker/dockerfile-dev
-      args:
-        - API_WALACTV=${API_URL:-https://walactv.walerike.com/apiwalactv}
-        - ACE_STREAM_HOST=${ACE_STREAM_HOST:-http://localhost:6878}
-        - APP_NAME=${APP_NAME:-WalactWeb}
-        - FIREBASE_API_KEY=${FIREBASE_API_KEY}
-        - FIREBASE_AUTH_DOMAIN=${FIREBASE_AUTH_DOMAIN}
-        - FIREBASE_DATABASE_URL=${FIREBASE_DATABASE_URL}
-        - FIREBASE_PROJECT_ID=${FIREBASE_PROJECT_ID}
-        - FIREBASE_STORAGE_BUCKET=${FIREBASE_STORAGE_BUCKET}
-        - FIREBASE_MESSAGING_SENDER_ID=${FIREBASE_MESSAGING_SENDER_ID}
-        - FIREBASE_APP_ID=${FIREBASE_APP_ID}
-    container_name: angular-dev
-    ports:
-      - "4200:4200"
-    restart: unless-stopped
-    networks:
-      - walactv-network
+#  angular-dev:
+#    build:
+#      context: ..
+#      dockerfile: docker/dockerfile-dev
+#      args:
+#        - API_WALACTV=${API_URL:-https://walactv.walerike.com/apiwalactv}
+#        - ACE_STREAM_HOST=${ACE_STREAM_HOST:-http://localhost:6878}
+#        - APP_NAME=${APP_NAME:-WalactWeb}
+#        - FIREBASE_API_KEY=${FIREBASE_API_KEY}
+#        - FIREBASE_AUTH_DOMAIN=${FIREBASE_AUTH_DOMAIN}
+#        - FIREBASE_DATABASE_URL=${FIREBASE_DATABASE_URL}
+#        - FIREBASE_PROJECT_ID=${FIREBASE_PROJECT_ID}
+#        - FIREBASE_STORAGE_BUCKET=${FIREBASE_STORAGE_BUCKET}
+#        - FIREBASE_MESSAGING_SENDER_ID=${FIREBASE_MESSAGING_SENDER_ID}
+#        - FIREBASE_APP_ID=${FIREBASE_APP_ID}
+#    container_name: angular-dev
+#    ports:
+#      - "4200:4200"
+#    restart: unless-stopped
+#    networks:
+#      - walactv-network
 
 networks:
   walactv-network:
