@@ -18,8 +18,8 @@ services:
       - "8080:8080"
     restart: unless-stopped
     networks:
-      - angular-network
+      - walactv-network
 
 networks:
-  angular-network:
+  walactv-network:
     driver: bridge
