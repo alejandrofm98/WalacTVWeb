@@ -1,7 +1,7 @@
 // Para producción - Los placeholders ${VAR} se reemplazan en build-time por el Dockerfile
 export const environment = {
   production: true,
-  apiUrl: '${API_URL}',
+  apiWalactv: '${API_WALACTV}',
   appName: '${APP_NAME}',
   firebase: {
     apiKey: '${FIREBASE_API_KEY}',

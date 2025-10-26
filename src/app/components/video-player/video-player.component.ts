@@ -17,6 +17,8 @@ import Hls from 'hls.js';
 import {Events} from '../../models';
 import {slugify} from '../../utils/slugify';
 import {NavbarComponent} from '../../shared/components/navbar-component/navbar.component';
+import {environment} from '../../../environments/environment';
+
 
 @Component({
   selector: 'app-video-player',
@@ -127,16 +129,28 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
 
   /** 🔧 Procesar URL del stream */
   private processStreamUrl(url: string): string {
-    try {
-      const parsedUrl = new URL(url);
+    const apiBase = environment.apiWalactv;
 
-      if (parsedUrl.toString().startsWith('http://127.0.0.1:6878')) {
-        const id = parsedUrl.searchParams.get('id');
+    try {
+      // ⚙️ AceStream local
+      if (url.startsWith('http://127.0.0.1:6878')) {
+        const id = new URL(url).searchParams.get('id');
         return '/apiace/ace/manifest.m3u8?id=' + id;
-      } else if (parsedUrl.toString().startsWith('https://walactv.walerike.com/proxy?url=')) {
-        return parsedUrl.toString().replace('https://walactv.walerike.com', '/apiwalactv');
       }
 
+      // 🧩 Si viene con dominio del backend remoto
+      if (url.startsWith('https://walactv.walerike.com/proxy?url=')) {
+        // En local, apiBase será "/apiwalactv"
+        // En prod, apiBase será "https://walactv.walerike.com/apiwalactv"
+        return url.replace('https://walactv.walerike.com', apiBase);
+      }
+
+      // 🧩 Si ya viene relativa
+      if (url.startsWith('/apiwalactv')) {
+        return url.replace('/apiwalactv', apiBase);
+      }
+
+      // Si no aplica ningún caso, devolver la original
       return url;
     } catch (e) {
       console.error('⚠️ Error parseando la URL del stream:', e);
