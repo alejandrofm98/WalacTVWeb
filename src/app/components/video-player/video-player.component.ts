@@ -19,7 +19,6 @@ import {slugify} from '../../utils/slugify';
 import {NavbarComponent} from '../../shared/components/navbar-component/navbar.component';
 import {environment} from '../../../environments/environment';
 
-
 @Component({
   selector: 'app-video-player',
   standalone: true,
@@ -45,45 +44,34 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
   private hideControlsTimeout?: number;
 
   eventData?: Events;
-  currentOriginalUrl: string = ''; // Para comparar con los botones
+  currentOriginalUrl: string = '';
 
-  constructor(private route: ActivatedRoute) {
-  }
+  constructor(private route: ActivatedRoute) {}
 
   ngOnInit() {
     this.route.paramMap.subscribe(params => {
       const slug = params.get('title');
       if (slug) {
-        const decodedTitle = slug.replace(/-/g, ' ');
-        this.eventTitle = decodedTitle;
+        this.eventTitle = slug.replace(/-/g, ' ');
       }
 
-      // Recuperamos el evento desde PlayerStateService
       const savedEvent = this.playerState.getEvent();
       if (savedEvent) {
         this.eventData = savedEvent;
-        console.log('✅ Evento cargado desde PlayerState:', this.eventData);
         this.loadStreamFromEvent();
         return;
       }
 
-      // Si no existe, buscamos en DataService por slug
       this.dataService.getItems().subscribe({
         next: (data) => {
           if (!data?.eventos) return;
-          const foundEvent = data.eventos.find((e: Events) =>
-            slugify(e.titulo) === slug
-          );
+          const foundEvent = data.eventos.find((e: Events) => slugify(e.titulo) === slug);
           if (foundEvent) {
             this.eventData = foundEvent;
-            console.log('✅ Evento encontrado:', this.eventData);
-            console.log('📺 Enlaces disponibles:', this.eventData?.enlaces);
             this.loadStreamFromEvent();
-          } else {
-            console.warn('❌ Evento no encontrado para el slug:', slug);
           }
         },
-        error: (err) => console.error('❌ Error al cargar eventos:', err)
+        error: (err) => console.error('Error al cargar eventos:', err)
       });
     });
   }
@@ -104,73 +92,53 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
     }
   }
 
-  /** 🔄 Cargar stream desde los datos del evento */
   private loadStreamFromEvent() {
-    // ⚠️ Seguridad: comprobamos que eventData y enlaces existen
     const firstM3u8 = this.eventData?.enlaces?.[0]?.m3u8?.[0];
-    if (!firstM3u8) {
-      console.warn('⚠️ No hay streams disponibles en el evento');
-      return;
-    }
+    if (!firstM3u8) return;
 
-    // Guardamos la URL original para comparación en botones
     this.currentOriginalUrl = firstM3u8;
-    const processedUrl = this.processStreamUrl(firstM3u8);
-    this.streamUrl = processedUrl;
-
+    this.streamUrl = this.processStreamUrl(firstM3u8);
     this.shouldInitializePlayer = true;
     this.cdr.detectChanges();
 
-    // Solo inicializar si el video element ya está disponible
     if (this.videoElement) {
       this.initializePlayer();
     }
   }
 
-  /** 🔧 Procesar URL del stream */
- private processStreamUrl(url: string): string {
-  const apiBase = environment.apiWalactv;
-  const acestreamBase = environment.acestreamHost;
+  private processStreamUrl(url: string): string {
+    const apiBase = environment.apiWalactv;
+    const acestreamBase = environment.acestreamHost;
 
-  try {
-    // 🔹 AceStream
-    if (url.startsWith('http://127.0.0.1:6878')) {
-      const id = new URL(url).searchParams.get('id');
-      return `${acestreamBase}/ace/manifest.m3u8?id=${id}`;
+    try {
+      if (url.includes('127.0.0.1:6878') || url.includes('localhost:6878')) {
+        const id = new URL(url).searchParams.get('id');
+        if (id) return `${acestreamBase}/ace/getstream?id=${id}`;
+      }
+
+      if (url.startsWith(acestreamBase)) return url;
+
+      if (url.startsWith('https://walactv.walerike.com/proxy?url=')) {
+        return url.replace('https://walactv.walerike.com', apiBase);
+      }
+
+      if (url.startsWith('/apiwalactv')) {
+        return url.replace('/apiwalactv', apiBase);
+      }
+
+      return url;
+    } catch (e) {
+      console.error('Error parseando URL:', e);
+      return url;
     }
-
-    // 🔹 Proxy remoto
-    if (url.startsWith('https://walactv.walerike.com/proxy?url=')) {
-      return url.replace('https://walactv.walerike.com', apiBase);
-    }
-
-    if (url.startsWith('/apiwalactv')) {
-      return url.replace('/apiwalactv', apiBase);
-    }
-
-    return url;
-  } catch (e) {
-    console.error('⚠️ Error parseando la URL del stream:', e);
-    return url;
   }
-}
 
-  /** 🎬 Inicializar HLS.js */
   private initializePlayer() {
     const video = this.videoElement?.nativeElement;
-    if (!video) {
-      console.warn('⚠️ Video element no disponible aún');
-      return;
-    }
+    if (!video) return;
 
     const urlToUse = Array.isArray(this.streamUrl) ? this.streamUrl[0] : this.streamUrl;
-
-    if (!urlToUse) {
-      console.error('❌ No hay stream URL');
-      return;
-    }
-
-    console.log('🎬 Inicializando player con URL:', urlToUse);
+    if (!urlToUse) return;
 
     if (this.hls) {
       this.hls.destroy();
@@ -178,7 +146,34 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
     }
 
     if (Hls.isSupported()) {
-      this.hls = new Hls({autoStartLoad: true});
+      this.hls = new Hls({
+        debug: false,
+        autoStartLoad: true,
+        startPosition: -1,
+        maxBufferLength: 30,
+        maxMaxBufferLength: 600,
+        maxBufferSize: 60 * 1000 * 1000,
+        maxBufferHole: 0.5,
+        highBufferWatchdogPeriod: 3,
+        liveSyncDurationCount: 3,
+        liveMaxLatencyDurationCount: Infinity,
+        liveDurationInfinity: true,
+        enableWorker: true,
+        manifestLoadingTimeOut: 20000,
+        manifestLoadingMaxRetry: 10,
+        levelLoadingTimeOut: 20000,
+        levelLoadingMaxRetry: 10,
+        fragLoadingTimeOut: 40000,
+        fragLoadingMaxRetry: 10,
+        fragLoadingRetryDelay: 1000,
+        lowLatencyMode: false,
+        backBufferLength: 90,
+        xhrSetup: (xhr: XMLHttpRequest) => {
+          xhr.timeout = 40000;
+          xhr.withCredentials = false;
+        }
+      });
+
       this.hls.attachMedia(video);
 
       this.hls.on(Hls.Events.MEDIA_ATTACHED, () => {
@@ -186,12 +181,31 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
       });
 
       this.hls.on(Hls.Events.MANIFEST_PARSED, () => {
-        video.play().catch(err => console.error('❌ Error al reproducir:', err));
+        video.play().catch(err => {
+          video.muted = true;
+          return video.play();
+        });
       });
 
       this.hls.on(Hls.Events.ERROR, (event, data) => {
-        console.error('⚠️ HLS.js error:', data);
+        console.error('HLS Error:', data.type, data.details);
+
+        if (data.fatal) {
+          switch (data.type) {
+            case Hls.ErrorTypes.NETWORK_ERROR:
+              setTimeout(() => this.hls?.startLoad(), 1000);
+              break;
+            case Hls.ErrorTypes.MEDIA_ERROR:
+              this.hls?.recoverMediaError();
+              break;
+            default:
+              this.hls?.destroy();
+              setTimeout(() => this.initializePlayer(), 2000);
+              break;
+          }
+        }
       });
+
     } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
       video.src = urlToUse;
       video.addEventListener('loadedmetadata', () => video.play());
@@ -201,10 +215,12 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
       this.isPlaying = true;
       this.cdr.markForCheck();
     });
+
     video.addEventListener('pause', () => {
       this.isPlaying = false;
       this.cdr.markForCheck();
     });
+
     video.addEventListener('volumechange', () => {
       this.volume = video.volume;
       this.isMuted = video.muted;
@@ -212,28 +228,23 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
     });
   }
 
-  /** 🎮 Controles */
   togglePlayPause() {
     const video = this.videoElement.nativeElement;
-    if (video.paused) video.play().catch(console.error);
-    else video.pause();
+    video.paused ? video.play().catch(console.error) : video.pause();
   }
 
   toggleMute() {
-    const video = this.videoElement.nativeElement;
-    video.muted = !video.muted;
+    this.videoElement.nativeElement.muted = !this.videoElement.nativeElement.muted;
   }
 
   setVolume(event: Event) {
     const input = event.target as HTMLInputElement;
-    const video = this.videoElement.nativeElement;
-    video.volume = parseFloat(input.value);
+    this.videoElement.nativeElement.volume = parseFloat(input.value);
   }
 
   toggleFullscreen() {
     const video = this.videoElement.nativeElement;
-    if (document.fullscreenElement) document.exitFullscreen();
-    else video.requestFullscreen();
+    document.fullscreenElement ? document.exitFullscreen() : video.requestFullscreen();
   }
 
   onMouseMove() {
@@ -254,13 +265,9 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
     }
   }
 
-  /** Cambiar el stream activo al hacer click en un botón de canal */
   changeStream(stream: string) {
-    console.log('🔄 Cambiando a stream:', stream);
-    // Guardamos la URL original para que el botón se marque como activo
     this.currentOriginalUrl = stream;
-    const processedUrl = this.processStreamUrl(stream);
-    this.streamUrl = processedUrl;
+    this.streamUrl = this.processStreamUrl(stream);
     this.initializePlayer();
   }
 }
