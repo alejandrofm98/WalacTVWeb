@@ -2,6 +2,7 @@
 import { Routes } from '@angular/router';
 import { VideoPlayerComponent } from './components/video-player/video-player.component';
 import { EventsListComponent } from './components/events-lists/events-list.component';
+import { TvChannelsComponent }  from './components/tv-channels/tv-channels.component';
 import { LoginComponent } from './components/login/login.component';
 import { authGuard } from './guards/auth.guard';
 
@@ -13,6 +14,12 @@ export const routes: Routes = [
   {
     path: '',
     component: EventsListComponent,
+    canActivate: [authGuard],
+    pathMatch: 'full'
+  },
+    {
+    path: 'channels',
+    component: TvChannelsComponent,
     canActivate: [authGuard],
     pathMatch: 'full'
   },

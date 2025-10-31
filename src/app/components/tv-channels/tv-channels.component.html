@@ -1,0 +1,34 @@
+<div class="channels-container">
+  <h1>Canales de TV</h1>
+
+  <div class="search-container">
+    <input 
+      type="text" 
+      [(ngModel)]="searchTerm" 
+      (input)="onSearch()"
+      placeholder="Buscar canales..."
+      class="search-input"
+    >
+  </div>
+
+  <div class="channels-grid">
+    <div
+      *ngFor="let channel of filteredChannels"
+      class="channel-card"
+      (click)="onChannelClick(channel)">
+      <div class="channel-logo">
+        <img [src]="channel.logo" [alt]="channel.canal" />
+      </div>
+      <div class="channel-name">
+        {{ channel.canal }}
+      </div>
+    </div>
+  </div>
+
+  <!-- Video Player Component -->
+  <app-video-player
+    *ngIf="selectedChannel"
+    [channel]="selectedChannel"
+    (close)="closePlayer()">
+  </app-video-player>
+</div>

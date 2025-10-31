@@ -1,5 +1,5 @@
 import { Injectable } from '@angular/core';
-import { Firestore, doc, getDoc } from '@angular/fire/firestore';
+import {Firestore, doc, getDoc, collectionData, collection} from '@angular/fire/firestore';
 import { Observable, from, of, catchError, switchMap } from 'rxjs';
 
 @Injectable({ providedIn: 'root' })
@@ -11,6 +11,37 @@ export class DataService {
    */
   getItems(): Observable<any> {
     return from(this.fetchEventsWithFallback());
+  }
+
+   /**
+   * Obtiene la lista de canales de TV desde el documento canales_2.0
+   */
+  getChannels(): Observable<any> {
+    return from(this.fetchChannels());
+  }
+
+  /**
+   * Obtiene el documento canales_2.0 de la colección canales
+   */
+  private async fetchChannels(): Promise<any> {
+    try {
+      console.log('📺 Buscando canales en canales_2.0...');
+
+      const docRef = doc(this.firestore, 'canales', 'canales_2.0');
+      const docSnap = await getDoc(docRef);
+
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        console.log('✅ Canales encontrados:', data);
+        return data;
+      } else {
+        console.log('❌ Documento canales_2.0 no existe');
+        return null;
+      }
+    } catch (error) {
+      console.error('❌ Error obteniendo canales:', error);
+      return null;
+    }
   }
 
   /**
@@ -73,6 +104,8 @@ export class DataService {
     }
   }
 
+
+
   /**
    * Verifica si el documento tiene eventos válidos
    */
@@ -96,5 +129,7 @@ export class DataService {
 
     return `${day}.${month}.${year}`;
   }
+
+
 
 }

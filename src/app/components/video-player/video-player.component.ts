@@ -18,6 +18,7 @@ import {Events} from '../../models';
 import {slugify} from '../../utils/slugify';
 import {NavbarComponent} from '../../shared/components/navbar-component/navbar.component';
 import {environment} from '../../../environments/environment';
+import {Channel} from '../../models/channel.model';
 
 @Component({
   selector: 'app-video-player',
@@ -30,6 +31,7 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
   @ViewChild('videoElement') videoElement!: ElementRef<HTMLVideoElement>;
   @Input() streamUrl: string | string[] = '';
   @Input() eventTitle: string = 'Reproducción en vivo';
+  @Input() channel: Channel | null = null;
 
   private hls?: Hls;
   private shouldInitializePlayer = false;
