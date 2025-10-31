@@ -9,16 +9,16 @@ import {
   OnInit,
   ViewChild
 } from '@angular/core';
-import {CommonModule} from '@angular/common';
-import {ActivatedRoute} from '@angular/router';
-import {DataService} from '../../services/data.service';
-import {PlayerStateService} from '../../services/player-state.service';
+import { CommonModule } from '@angular/common';
+import { ActivatedRoute } from '@angular/router';
+import { DataService } from '../../services/data.service';
+import { PlayerStateService } from '../../services/player-state.service';
 import Hls from 'hls.js';
-import {Events} from '../../models';
-import {slugify} from '../../utils/slugify';
-import {NavbarComponent} from '../../shared/components/navbar-component/navbar.component';
-import {environment} from '../../../environments/environment';
-import {Channel} from '../../models/channel.model';
+import { Events } from '../../models';
+import { slugify } from '../../utils/slugify';
+import { NavbarComponent } from '../../shared/components/navbar-component/navbar.component';
+import { environment } from '../../../environments/environment';
+import { Channel } from '../../models/channel.model';
 
 @Component({
   selector: 'app-video-player',
@@ -47,10 +47,34 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
 
   eventData?: Events;
   currentOriginalUrl: string = '';
+  isChannelMode = false; // Nuevo: para diferenciar entre canal y evento
 
   constructor(private route: ActivatedRoute) {}
 
   ngOnInit() {
+    // Primero verificar si hay un canal guardado en el estado
+    const savedChannel = this.playerState.getChannel();
+    if (savedChannel) {
+      console.log('🎯 Cargando desde canal guardado:', savedChannel.canal);
+      this.channel = savedChannel;
+      this.isChannelMode = true;
+      this.eventTitle = savedChannel.canal;
+      this.loadStreamFromChannel();
+      return;
+    }
+
+    // Si hay un @Input channel, usarlo
+    if (this.channel) {
+      console.log('🎯 Cargando desde @Input channel:', this.channel.canal);
+      this.isChannelMode = true;
+      this.eventTitle = this.channel.canal;
+      this.loadStreamFromChannel();
+      return;
+    }
+
+    // Sino, manejar como evento
+    console.log('🎯 Cargando como evento');
+    this.isChannelMode = false;
     this.route.paramMap.subscribe(params => {
       const slug = params.get('title');
       if (slug) {
@@ -78,6 +102,25 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
     });
   }
 
+  private loadStreamFromChannel() {
+    if (!this.channel?.m3u8?.length) {
+      console.error('❌ No hay URL de stream para el canal');
+      return;
+    }
+
+    console.log('📺 Cargando stream del canal:', this.channel.m3u8[0]);
+
+    // Establecer la URL del stream y preparar el reproductor
+    this.streamUrl = this.processStreamUrl(this.channel.m3u8[0]);
+    this.currentOriginalUrl = this.channel.m3u8[0];
+    this.shouldInitializePlayer = true;
+
+    // Si la vista ya está inicializada, inicializar el reproductor manualmente
+    if (this.videoElement) {
+      setTimeout(() => this.initializePlayer(), 0);
+    }
+  }
+
   ngAfterViewInit() {
     if (this.shouldInitializePlayer) {
       setTimeout(() => this.initializePlayer(), 0);
@@ -92,6 +135,8 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
     if (this.hideControlsTimeout) {
       clearTimeout(this.hideControlsTimeout);
     }
+    // Limpiar el estado al destruir el componente
+    this.playerState.clear();
   }
 
   private loadStreamFromEvent() {
@@ -141,6 +186,8 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
 
     const urlToUse = Array.isArray(this.streamUrl) ? this.streamUrl[0] : this.streamUrl;
     if (!urlToUse) return;
+
+    console.log('🎬 Inicializando reproductor con URL:', urlToUse);
 
     if (this.hls) {
       this.hls.destroy();
@@ -271,5 +318,15 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
     this.currentOriginalUrl = stream;
     this.streamUrl = this.processStreamUrl(stream);
     this.initializePlayer();
+  }
+
+  // Nuevo método: permite cambiar entre múltiples URLs del canal
+  changeChannelStream(index: number) {
+    if (this.channel && this.channel.m3u8 && this.channel.m3u8[index]) {
+      console.log('🔄 Cambiando a stream alternativo:', this.channel.m3u8[index]);
+      this.streamUrl = this.channel.m3u8[index];
+      this.currentOriginalUrl = this.channel.m3u8[index];
+      this.initializePlayer();
+    }
   }
 }

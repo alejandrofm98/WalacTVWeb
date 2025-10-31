@@ -1,14 +1,17 @@
 <div class="channels-container">
-  <h1>Canales de TV</h1>
+  <div class="header">
+    <h1>Canales de TV</h1>
 
-  <div class="search-container">
-    <input 
-      type="text" 
-      [(ngModel)]="searchTerm" 
-      (input)="onSearch()"
-      placeholder="Buscar canales..."
-      class="search-input"
-    >
+    <div class="search-box">
+      <input
+        type="text"
+        [(ngModel)]="searchTerm"
+        (input)="onSearch()"
+        placeholder="Buscar canal..."
+        class="search-input"
+      />
+      <span class="search-icon">🔍</span>
+    </div>
   </div>
 
   <div class="channels-grid">
@@ -25,10 +28,7 @@
     </div>
   </div>
 
-  <!-- Video Player Component -->
-  <app-video-player
-    *ngIf="selectedChannel"
-    [channel]="selectedChannel"
-    (close)="closePlayer()">
-  </app-video-player>
+  <div *ngIf="filteredChannels.length === 0" class="no-results">
+    <p>No se encontraron canales</p>
+  </div>
 </div>
