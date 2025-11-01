@@ -47,58 +47,99 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
 
   eventData?: Events;
   currentOriginalUrl: string = '';
-  isChannelMode = false; // Nuevo: para diferenciar entre canal y evento
+  isChannelMode = false;
 
   constructor(private route: ActivatedRoute) {}
 
   ngOnInit() {
-    // Primero verificar si hay un canal guardado en el estado
-    const savedChannel = this.playerState.getChannel();
-    if (savedChannel) {
-      console.log('🎯 Cargando desde canal guardado:', savedChannel.canal);
-      this.channel = savedChannel;
-      this.isChannelMode = true;
-      this.eventTitle = savedChannel.canal;
-      this.loadStreamFromChannel();
-      return;
-    }
-
-    // Si hay un @Input channel, usarlo
-    if (this.channel) {
-      console.log('🎯 Cargando desde @Input channel:', this.channel.canal);
-      this.isChannelMode = true;
-      this.eventTitle = this.channel.canal;
-      this.loadStreamFromChannel();
-      return;
-    }
-
-    // Sino, manejar como evento
-    console.log('🎯 Cargando como evento');
-    this.isChannelMode = false;
     this.route.paramMap.subscribe(params => {
       const slug = params.get('title');
-      if (slug) {
-        this.eventTitle = slug.replace(/-/g, ' ');
+      if (!slug) return;
+
+      console.log('🔍 Slug detectado:', slug);
+
+      // Intentar cargar desde el estado guardado primero
+      const savedChannel = this.playerState.getChannel();
+      const savedEvent = this.playerState.getEvent();
+
+      if (savedChannel && slugify(savedChannel.canal) === slug) {
+        console.log('✅ Canal encontrado en estado:', savedChannel.canal);
+        this.channel = savedChannel;
+        this.isChannelMode = true;
+        this.eventTitle = savedChannel.canal;
+        this.loadStreamFromChannel();
+        return;
       }
 
-      const savedEvent = this.playerState.getEvent();
-      if (savedEvent) {
+      if (savedEvent && slugify(savedEvent.titulo) === slug) {
+        console.log('✅ Evento encontrado en estado:', savedEvent.titulo);
         this.eventData = savedEvent;
+        this.isChannelMode = false;
+        this.eventTitle = savedEvent.titulo;
         this.loadStreamFromEvent();
         return;
       }
 
-      this.dataService.getItems().subscribe({
-        next: (data) => {
-          if (!data?.eventos) return;
-          const foundEvent = data.eventos.find((e: Events) => slugify(e.titulo) === slug);
-          if (foundEvent) {
-            this.eventData = foundEvent;
-            this.loadStreamFromEvent();
+      // Si no hay estado guardado, buscar en el backend
+      console.log('🔄 Buscando en backend...');
+      this.loadFromBackend(slug);
+    });
+  }
+
+  private loadFromBackend(slug: string) {
+    // Primero intentar buscar en canales
+    this.dataService.getChannels().subscribe({
+      next: (data) => {
+        if (data?.canales) {
+          const foundChannel = data.canales.find((c: Channel) =>
+            slugify(c.canal) === slug
+          );
+
+          if (foundChannel) {
+            console.log('✅ Canal encontrado en backend:', foundChannel.canal);
+            this.channel = foundChannel;
+            this.isChannelMode = true;
+            this.eventTitle = foundChannel.canal;
+            this.playerState.setChannel(foundChannel); // Guardar para futuras recargas
+            this.loadStreamFromChannel();
+            return;
           }
-        },
-        error: (err) => console.error('Error al cargar eventos:', err)
-      });
+        }
+
+        // Si no es un canal, buscar en eventos
+        this.loadEventFromBackend(slug);
+      },
+      error: (err) => {
+        console.error('❌ Error al cargar canales:', err);
+        this.loadEventFromBackend(slug);
+      }
+    });
+  }
+
+  private loadEventFromBackend(slug: string) {
+    this.dataService.getItems().subscribe({
+      next: (data) => {
+        if (!data?.eventos) {
+          console.error('❌ No se encontraron eventos');
+          return;
+        }
+
+        const foundEvent = data.eventos.find((e: Events) =>
+          slugify(e.titulo) === slug
+        );
+
+        if (foundEvent) {
+          console.log('✅ Evento encontrado en backend:', foundEvent.titulo);
+          this.eventData = foundEvent;
+          this.isChannelMode = false;
+          this.eventTitle = foundEvent.titulo;
+          this.playerState.setEvent(foundEvent); // Guardar para futuras recargas
+          this.loadStreamFromEvent();
+        } else {
+          console.error('❌ No se encontró contenido con slug:', slug);
+        }
+      },
+      error: (err) => console.error('❌ Error al cargar eventos:', err)
     });
   }
 
@@ -110,12 +151,10 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
 
     console.log('📺 Cargando stream del canal:', this.channel.m3u8[0]);
 
-    // Establecer la URL del stream y preparar el reproductor
     this.streamUrl = this.processStreamUrl(this.channel.m3u8[0]);
     this.currentOriginalUrl = this.channel.m3u8[0];
     this.shouldInitializePlayer = true;
 
-    // Si la vista ya está inicializada, inicializar el reproductor manualmente
     if (this.videoElement) {
       setTimeout(() => this.initializePlayer(), 0);
     }
@@ -135,8 +174,7 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
     if (this.hideControlsTimeout) {
       clearTimeout(this.hideControlsTimeout);
     }
-    // Limpiar el estado al destruir el componente
-    this.playerState.clear();
+    // NO limpiar el estado aquí para que funcione el reload
   }
 
   private loadStreamFromEvent() {
@@ -320,7 +358,6 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
     this.initializePlayer();
   }
 
-  // Nuevo método: permite cambiar entre múltiples URLs del canal
   changeChannelStream(index: number) {
     if (this.channel && this.channel.m3u8 && this.channel.m3u8[index]) {
       console.log('🔄 Cambiando a stream alternativo:', this.channel.m3u8[index]);
