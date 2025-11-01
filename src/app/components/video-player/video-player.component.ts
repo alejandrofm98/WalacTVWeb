@@ -13,12 +13,14 @@ import { CommonModule } from '@angular/common';
 import { ActivatedRoute } from '@angular/router';
 import { DataService } from '../../services/data.service';
 import { PlayerStateService } from '../../services/player-state.service';
+import { ChromecastService, CastState } from '../../services/chromecast.service';
 import Hls from 'hls.js';
 import { Events } from '../../models';
 import { slugify } from '../../utils/slugify';
 import { NavbarComponent } from '../../shared/components/navbar-component/navbar.component';
 import { environment } from '../../../environments/environment';
 import { Channel } from '../../models/channel.model';
+import { Subscription } from 'rxjs';
 
 @Component({
   selector: 'app-video-player',
@@ -37,13 +39,25 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
   private shouldInitializePlayer = false;
   private dataService = inject(DataService);
   private playerState = inject(PlayerStateService);
+  private chromecastService = inject(ChromecastService);
   private cdr = inject(ChangeDetectorRef);
+  private castSubscription?: Subscription;
 
   isPlaying = false;
   volume = 1;
   isMuted = false;
   showControls = true;
   private hideControlsTimeout?: number;
+
+  // Estado de Chromecast
+  castState: CastState = {
+    isAvailable: false,
+    isConnected: false,
+    isPlaying: false,
+    deviceName: null,
+    currentTime: 0,
+    duration: 0
+  };
 
   eventData?: Events;
   currentOriginalUrl: string = '';
@@ -52,13 +66,23 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
   constructor(private route: ActivatedRoute) {}
 
   ngOnInit() {
+    // Suscribirse al estado de Chromecast
+    this.castSubscription = this.chromecastService.castState$.subscribe(state => {
+      this.castState = state;
+      this.cdr.markForCheck();
+
+      // Si se conecta a Chromecast, pausar el video local
+      if (state.isConnected && this.videoElement?.nativeElement) {
+        this.videoElement.nativeElement.pause();
+      }
+    });
+
     this.route.paramMap.subscribe(params => {
       const slug = params.get('title');
       if (!slug) return;
 
       console.log('🔍 Slug detectado:', slug);
 
-      // Intentar cargar desde el estado guardado primero
       const savedChannel = this.playerState.getChannel();
       const savedEvent = this.playerState.getEvent();
 
@@ -80,14 +104,12 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
         return;
       }
 
-      // Si no hay estado guardado, buscar en el backend
       console.log('🔄 Buscando en backend...');
       this.loadFromBackend(slug);
     });
   }
 
   private loadFromBackend(slug: string) {
-    // Primero intentar buscar en canales
     this.dataService.getChannels().subscribe({
       next: (data) => {
         if (data?.canales) {
@@ -100,13 +122,12 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
             this.channel = foundChannel;
             this.isChannelMode = true;
             this.eventTitle = foundChannel.canal;
-            this.playerState.setChannel(foundChannel); // Guardar para futuras recargas
+            this.playerState.setChannel(foundChannel);
             this.loadStreamFromChannel();
             return;
           }
         }
 
-        // Si no es un canal, buscar en eventos
         this.loadEventFromBackend(slug);
       },
       error: (err) => {
@@ -133,7 +154,7 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
           this.eventData = foundEvent;
           this.isChannelMode = false;
           this.eventTitle = foundEvent.titulo;
-          this.playerState.setEvent(foundEvent); // Guardar para futuras recargas
+          this.playerState.setEvent(foundEvent);
           this.loadStreamFromEvent();
         } else {
           console.error('❌ No se encontró contenido con slug:', slug);
@@ -174,7 +195,9 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
     if (this.hideControlsTimeout) {
       clearTimeout(this.hideControlsTimeout);
     }
-    // NO limpiar el estado aquí para que funcione el reload
+    if (this.castSubscription) {
+      this.castSubscription.unsubscribe();
+    }
   }
 
   private loadStreamFromEvent() {
@@ -365,5 +388,58 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
       this.currentOriginalUrl = this.channel.m3u8[index];
       this.initializePlayer();
     }
+  }
+
+  // ========== MÉTODOS DE CHROMECAST ==========
+
+startCasting() {
+  console.log('🎯 startCasting() llamado');
+  console.log('Cast State:', this.castState);
+
+  if (!this.castState.isAvailable) {
+    console.warn('⚠️ Chromecast no disponible');
+    alert('Chromecast no está disponible');
+    return;
+  }
+
+  console.log('✅ Chromecast disponible, continuando...');
+
+  if (this.castState.isConnected) {
+    console.log('📺 Ya conectado, cargando media...');
+    this.loadMediaToChromecast();
+  } else {
+    console.log('🔌 No conectado, solicitando sesión...');
+    this.chromecastService.requestSession();
+
+    setTimeout(() => {
+      console.log('⏱️ Verificando conexión después de timeout...');
+      const state = this.chromecastService.getCurrentState();
+      console.log('Estado actual:', state);
+
+      if (state.isConnected) {
+        console.log('✅ Conectado, cargando media...');
+        this.loadMediaToChromecast();
+      } else {
+        console.log('❌ No se pudo conectar');
+      }
+    }, 1000);
+  }
+}
+
+  private loadMediaToChromecast() {
+    const streamUrl = Array.isArray(this.streamUrl) ? this.streamUrl[0] : this.streamUrl;
+    if (streamUrl) {
+      console.log('📡 Cargando media en Chromecast:', streamUrl);
+      this.chromecastService.loadMedia(streamUrl, this.eventTitle);
+    }
+  }
+
+  stopCasting() {
+    console.log('🛑 Deteniendo Chromecast');
+    this.chromecastService.endSession();
+  }
+
+  toggleCastPlayPause() {
+    this.chromecastService.togglePlayPause();
   }
 }

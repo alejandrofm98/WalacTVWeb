@@ -32,9 +32,8 @@
   background: #000;
   border-radius: 12px;
   overflow: hidden;
-  box-shadow:
-    0 20px 60px rgba(0, 0, 0, 0.8),
-    0 0 0 1px rgba(255, 255, 255, 0.05);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.8),
+  0 0 0 1px rgba(255, 255, 255, 0.05);
   cursor: pointer;
   margin: 0 24px;
 }
@@ -465,4 +464,54 @@
   .channel-options {
     padding: 16px 8px;
   }
+
+  /* Estilos para Chromecast */
+  .cast-button {
+    transition: all 0.3s ease;
+  }
+
+  .cast-button.casting {
+    color: #1a73e8;
+    background-color: rgba(26, 115, 232, 0.15);
+  }
+
+  .cast-button:hover {
+    background-color: rgba(255, 255, 255, 0.1);
+  }
+
+  .cast-button.casting:hover {
+    background-color: rgba(26, 115, 232, 0.25);
+  }
+
+  .casting-indicator {
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    background: linear-gradient(135deg, #1a73e8 0%, #4285f4 100%);
+    color: white;
+    padding: 10px 18px;
+    border-radius: 24px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 14px;
+    font-weight: 500;
+    box-shadow: 0 4px 12px rgba(26, 115, 232, 0.4);
+    z-index: 1000;
+    animation: pulse 2s ease-in-out infinite;
+  }
+
+  .casting-indicator svg {
+    flex-shrink: 0;
+  }
+
+  @keyframes pulse {
+    0%, 100% {
+      box-shadow: 0 4px 12px rgba(26, 115, 232, 0.4);
+    }
+    50% {
+      box-shadow: 0 4px 20px rgba(26, 115, 232, 0.6);
+    }
+  }
+
 }
