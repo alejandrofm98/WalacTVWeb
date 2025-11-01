@@ -52,34 +52,56 @@ export class ChromecastService {
   }
 
   private initializeCastApi(): void {
-    // Evitamos sobrescribir si ya hay handler
-    if ((window as any).__onGCastApiAvailable) {
-      // Si ya existe, aún así intentamos comprobar si framework ya está listo
-      this.trySetupFramework();
-      return;
-    }
+  console.log('🎬 Iniciando Cast API...');
+  console.log('Window chrome.cast disponible:', !!(window as any).chrome?.cast);
 
-    (window as any).__onGCastApiAvailable = (isAvailable: boolean) => {
-      console.log('🧩 __onGCastApiAvailable llamado:', isAvailable);
-
-      if (isAvailable && (window as any).chrome?.cast?.framework) {
-        this.setupCastContext();
-      } else {
-        console.warn('⚠️ Google Cast API no disponible aún, iniciando reintentos...');
-        // Reintentar cada 1s hasta que chrome.cast.framework exista (timeout indefinido)
-        const retry = setInterval(() => {
-          if ((window as any).chrome?.cast?.framework) {
-            clearInterval(retry);
-            console.log('✅ Cast Framework listo (por retry)');
-            this.setupCastContext();
-          }
-        }, 1000);
-      }
-    };
-
-    // Por si el SDK ya se cargó antes de asignar el handler
-    this.trySetupFramework();
+  // Si ya está disponible el framework
+  if ((window as any).chrome?.cast?.framework) {
+    console.log('✅ Framework ya disponible inmediatamente');
+    this.setupCastContext();
+    return;
   }
+
+  // Configurar callback
+  (window as any).__onGCastApiAvailable = (isAvailable: boolean) => {
+    console.log('🧩 __onGCastApiAvailable llamado:', isAvailable);
+
+    if (isAvailable) {
+      // Dar tiempo al framework para inicializarse completamente
+      setTimeout(() => {
+        if ((window as any).chrome?.cast?.framework) {
+          this.setupCastContext();
+        } else {
+          console.error('❌ Framework reportado como disponible pero no encontrado');
+          this.retrySetup();
+        }
+      }, 100);
+    } else {
+      console.warn('⚠️ Google Cast API no disponible');
+    }
+  };
+
+  // Reintentar configuración cada 2 segundos por si acaso
+  this.retrySetup();
+}
+
+private retrySetup() {
+  let attempts = 0;
+  const maxAttempts = 10;
+
+  const retry = setInterval(() => {
+    attempts++;
+    if ((window as any).chrome?.cast?.framework) {
+      clearInterval(retry);
+      console.log(`✅ Cast Framework listo (intento ${attempts})`);
+      this.setupCastContext();
+    } else if (attempts >= maxAttempts) {
+      clearInterval(retry);
+      console.error('❌ Timeout esperando Cast Framework después de', maxAttempts, 'intentos');
+      console.log('ℹ️ Asegúrate de que el script de Cast esté en index.html');
+    }
+  }, 2000);
+}
 
   private trySetupFramework() {
     if ((window as any).chrome?.cast?.framework && !this.castContext) {
