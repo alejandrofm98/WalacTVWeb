@@ -160,7 +160,7 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
     try {
       if (url.includes('127.0.0.1:6878') || url.includes('localhost:6878')) {
         const id = new URL(url).searchParams.get('id');
-        if (id) return `${acestreamBase}/ace/getstream?id=${id}`;
+        if (id) return `${acestreamBase}/ace/manifest.m3u8?id=${id}`;
       }
 
       if (url.startsWith(acestreamBase)) return url;
