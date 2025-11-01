@@ -159,13 +159,12 @@
 .volume-control input[type="range"] {
   width: 100px;
   height: 6px;
-  background: rgba(255, 255, 255, 0.2);
+  background: linear-gradient(to right, #3b82f6 0%, #3b82f6 var(--value, 0%), rgba(255, 255, 255, 0.2) var(--value, 0%), rgba(255, 255, 255, 0.2) 100%);
   border-radius: 3px;
   outline: none;
   -webkit-appearance: none;
   appearance: none;
   cursor: pointer;
-  position: relative;
 }
 
 .volume-control input[type="range"]::-webkit-slider-thumb {
@@ -173,7 +172,7 @@
   appearance: none;
   width: 16px;
   height: 16px;
-  background: white;
+  background: #3b82f6;
   border-radius: 50%;
   cursor: pointer;
   transition: all 0.2s ease;
@@ -182,13 +181,25 @@
 
 .volume-control input[type="range"]::-webkit-slider-thumb:hover {
   transform: scale(1.2);
-  box-shadow: 0 3px 10px rgba(255, 255, 255, 0.4);
+  box-shadow: 0 3px 12px rgba(59, 130, 246, 0.6);
+  background: #60a5fa;
+}
+
+.volume-control input[type="range"]::-moz-range-track {
+  background: transparent;
+  border: none;
+}
+
+.volume-control input[type="range"]::-moz-range-progress {
+  background: #3b82f6;
+  height: 6px;
+  border-radius: 3px;
 }
 
 .volume-control input[type="range"]::-moz-range-thumb {
   width: 16px;
   height: 16px;
-  background: white;
+  background: #3b82f6;
   border: none;
   border-radius: 50%;
   cursor: pointer;
@@ -198,7 +209,8 @@
 
 .volume-control input[type="range"]::-moz-range-thumb:hover {
   transform: scale(1.2);
-  box-shadow: 0 3px 10px rgba(255, 255, 255, 0.4);
+  background: #60a5fa;
+  box-shadow: 0 3px 12px rgba(59, 130, 246, 0.6);
 }
 
 .channel-options {
@@ -269,7 +281,6 @@
   transform: translateY(0);
 }
 
-/* Hide native controls in fullscreen */
 .video-element::-webkit-media-controls-timeline,
 .video-element::-webkit-media-controls-current-time-display,
 .video-element::-webkit-media-controls-time-remaining-display,
@@ -280,32 +291,26 @@
   display: none !important;
 }
 
-/* Hide native controls in fullscreen */
 :fullscreen .video-element::-webkit-media-controls-panel {
   display: none !important;
 }
 
-/* Hide native controls in fullscreen for Firefox */
 :fullscreen .video-element::-moz-media-controls-panel {
   display: none !important;
 }
 
-/* Hide native controls in fullscreen for IE/Edge */
 :fullscreen .video-element::-ms-media-controls-panel {
   display: none !important;
 }
 
-/* Hide native controls in fullscreen for standard */
 :fullscreen .video-element::media-controls-panel {
   display: none !important;
 }
 
-/* Hide progress bar in fullscreen */
 :fullscreen .video-element::-webkit-media-controls-timeline {
   display: none !important;
 }
 
-/* Live Indicator */
 .live-indicator {
   display: inline-flex;
   align-items: center;
@@ -356,7 +361,45 @@
   }
 }
 
-/* Responsive */
+.cast-button {
+  transition: all 0.3s ease;
+}
+
+.cast-button.casting {
+  color: #1a73e8;
+  background-color: rgba(26, 115, 232, 0.15);
+}
+
+.cast-button:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+.cast-button.casting:hover {
+  background-color: rgba(26, 115, 232, 0.25);
+}
+
+.casting-indicator {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  background: linear-gradient(135deg, #1a73e8 0%, #4285f4 100%);
+  color: white;
+  padding: 10px 18px;
+  border-radius: 24px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+  font-weight: 500;
+  box-shadow: 0 4px 12px rgba(26, 115, 232, 0.4);
+  z-index: 1000;
+  animation: pulse 2s ease-in-out infinite;
+}
+
+.casting-indicator svg {
+  flex-shrink: 0;
+}
+
 @media (max-width: 1024px) {
   .event-title {
     font-size: 28px;
@@ -464,54 +507,4 @@
   .channel-options {
     padding: 16px 8px;
   }
-
-  /* Estilos para Chromecast */
-  .cast-button {
-    transition: all 0.3s ease;
-  }
-
-  .cast-button.casting {
-    color: #1a73e8;
-    background-color: rgba(26, 115, 232, 0.15);
-  }
-
-  .cast-button:hover {
-    background-color: rgba(255, 255, 255, 0.1);
-  }
-
-  .cast-button.casting:hover {
-    background-color: rgba(26, 115, 232, 0.25);
-  }
-
-  .casting-indicator {
-    position: absolute;
-    top: 20px;
-    right: 20px;
-    background: linear-gradient(135deg, #1a73e8 0%, #4285f4 100%);
-    color: white;
-    padding: 10px 18px;
-    border-radius: 24px;
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    font-size: 14px;
-    font-weight: 500;
-    box-shadow: 0 4px 12px rgba(26, 115, 232, 0.4);
-    z-index: 1000;
-    animation: pulse 2s ease-in-out infinite;
-  }
-
-  .casting-indicator svg {
-    flex-shrink: 0;
-  }
-
-  @keyframes pulse {
-    0%, 100% {
-      box-shadow: 0 4px 12px rgba(26, 115, 232, 0.4);
-    }
-    50% {
-      box-shadow: 0 4px 20px rgba(26, 115, 232, 0.6);
-    }
-  }
-
 }

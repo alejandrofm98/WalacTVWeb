@@ -6,11 +6,12 @@ import { DataService } from '../../services/data.service';
 import { PlayerStateService } from '../../services/player-state.service';
 import { Channel } from '../../models/channel.model';
 import { slugify } from '../../utils/slugify';
+import {NavbarComponent} from '../../shared/components/navbar-component/navbar.component';
 
 @Component({
   selector: 'app-tv-channels',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, NavbarComponent],
   templateUrl: './tv-channels.component.html',
   styleUrls: ['./tv-channels.component.css']
 })

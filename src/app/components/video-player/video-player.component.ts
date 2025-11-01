@@ -347,10 +347,19 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
     this.videoElement.nativeElement.muted = !this.videoElement.nativeElement.muted;
   }
 
-  setVolume(event: Event) {
-    const input = event.target as HTMLInputElement;
-    this.videoElement.nativeElement.volume = parseFloat(input.value);
+setVolume(event: any): void {
+  const newVolume = parseFloat(event.target.value);
+  this.volume = newVolume;
+
+  // Actualizar el color de relleno del slider
+  const percentage = (newVolume * 100);
+  event.target.style.setProperty('--value', `${percentage}%`);
+
+  if (this.videoElement && this.videoElement.nativeElement) {
+    this.videoElement.nativeElement.volume = newVolume;
+    this.isMuted = newVolume === 0;
   }
+}
 
   toggleFullscreen() {
     const video = this.videoElement.nativeElement;
