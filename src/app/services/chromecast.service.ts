@@ -4,12 +4,6 @@ import { BehaviorSubject, Observable } from 'rxjs';
 
 declare const chrome: any;
 
-declare global {
-  interface Window {
-    __onGCastApiAvailable?: (isAvailable: boolean) => void;
-  }
-}
-
 export interface CastState {
   isAvailable: boolean;
   isConnected: boolean;
@@ -23,9 +17,8 @@ export interface CastState {
   providedIn: 'root'
 })
 export class ChromecastService {
-  private castContext: any = null;
-  private remotePlayer: any = null;
-  private remotePlayerController: any = null;
+  private session: any = null;
+  private currentMedia: any = null;
 
   private castStateSubject = new BehaviorSubject<CastState>({
     isAvailable: false,
@@ -40,191 +33,143 @@ export class ChromecastService {
 
   constructor() {
     console.log('🏗️ ChromecastService constructor');
-    this.initializeCastApi();
-
-    // Debug: comprobar estado pasado un tiempo
-    setTimeout(() => {
-      console.log('🔍 Verificación de Cast después de 3s:');
-      console.log('- window.chrome.cast:', (window as any)['chrome']?.cast);
-      console.log('- CastContext:', this.castContext);
-      console.log('- Estado actual:', this.castStateSubject.value);
-    }, 3000);
+    this.initializeCast();
   }
 
-  private initializeCastApi(): void {
-  console.log('🎬 Iniciando Cast API...');
-  console.log('Window chrome.cast disponible:', !!(window as any).chrome?.cast);
-
-  // Si ya está disponible el framework
-  if ((window as any).chrome?.cast?.framework) {
-    console.log('✅ Framework ya disponible inmediatamente');
-    this.setupCastContext();
-    return;
-  }
-
-  // Configurar callback
-  (window as any).__onGCastApiAvailable = (isAvailable: boolean) => {
-    console.log('🧩 __onGCastApiAvailable llamado:', isAvailable);
-
-    if (isAvailable) {
-      // Dar tiempo al framework para inicializarse completamente
-      setTimeout(() => {
-        if ((window as any).chrome?.cast?.framework) {
-          this.setupCastContext();
-        } else {
-          console.error('❌ Framework reportado como disponible pero no encontrado');
-          this.retrySetup();
-        }
-      }, 100);
-    } else {
-      console.warn('⚠️ Google Cast API no disponible');
-    }
-  };
-
-  // Reintentar configuración cada 2 segundos por si acaso
-  this.retrySetup();
-}
-
-private retrySetup() {
-  let attempts = 0;
-  const maxAttempts = 10;
-
-  const retry = setInterval(() => {
-    attempts++;
-    if ((window as any).chrome?.cast?.framework) {
-      clearInterval(retry);
-      console.log(`✅ Cast Framework listo (intento ${attempts})`);
-      this.setupCastContext();
-    } else if (attempts >= maxAttempts) {
-      clearInterval(retry);
-      console.error('❌ Timeout esperando Cast Framework después de', maxAttempts, 'intentos');
-      console.log('ℹ️ Asegúrate de que el script de Cast esté en index.html');
-    }
-  }, 2000);
-}
-
-  private trySetupFramework() {
-    if ((window as any).chrome?.cast?.framework && !this.castContext) {
-      console.log('ℹ️ Cast framework ya presente, configurando ahora...');
-      this.setupCastContext();
-    }
-  }
-
-  private setupCastContext(): void {
-    try {
-      this.castContext = chrome.cast.framework.CastContext.getInstance();
-
-      // Configurar opciones
-      try {
-        this.castContext.setOptions({
-          receiverApplicationId: chrome.cast.media.DEFAULT_MEDIA_RECEIVER_APP_ID,
-          autoJoinPolicy: chrome.cast.AutoJoinPolicy.ORIGIN_SCOPED
-        });
-      } catch (optErr) {
-        console.warn('⚠️ No se pudieron establecer opciones de CastContext:', optErr);
+  private initializeCast(): void {
+    // Configurar callback global
+    (window as any)['__onGCastApiAvailable'] = (isAvailable: boolean) => {
+      console.log('🎯 Cast API Available:', isAvailable);
+      if (isAvailable) {
+        this.setupCastApi();
       }
+    };
 
-      // Configurar Remote Player
-      this.remotePlayer = new chrome.cast.framework.RemotePlayer();
-      this.remotePlayerController = new chrome.cast.framework.RemotePlayerController(this.remotePlayer);
+    // Si ya está disponible
+    if ((window as any).chrome?.cast?.isAvailable) {
+      console.log('✅ Cast ya disponible, inicializando...');
+      this.setupCastApi();
+    } else {
+      console.log('⏳ Esperando Cast API...');
+    }
+  }
 
-      // Escuchar cambios en la conexión y reproduc.
-      this.castContext.addEventListener(
-        chrome.cast.framework.CastContextEventType.SESSION_STATE_CHANGED,
-        (event: any) => this.onSessionStateChanged(event)
+  private setupCastApi(): void {
+    try {
+      const sessionRequest = new chrome.cast.SessionRequest(
+        chrome.cast.media.DEFAULT_MEDIA_RECEIVER_APP_ID
       );
 
-      // Eventos del remote player controller
-      const evts = chrome.cast.framework.RemotePlayerEventType;
-      this.remotePlayerController.addEventListener(evts.IS_CONNECTED_CHANGED, () => this.updateCastState());
-      this.remotePlayerController.addEventListener(evts.IS_PLAYING_CHANGED, () => this.updateCastState());
-      this.remotePlayerController.addEventListener(evts.CURRENT_TIME_CHANGED, () => this.updateCastState());
-      this.remotePlayerController.addEventListener(evts.DURATION_CHANGED, () => this.updateCastState());
-      this.remotePlayerController.addEventListener(evts.IS_MUTED_CHANGED, () => this.updateCastState());
-      this.remotePlayerController.addEventListener(evts.VOLUME_LEVEL_CHANGED, () => this.updateCastState());
+      const apiConfig = new chrome.cast.ApiConfig(
+        sessionRequest,
+        (session: any) => this.sessionListener(session),
+        (availability: string) => this.receiverListener(availability)
+      );
 
-      // Marcar como disponible y actualizar estado inicial
-      this.updateCastState();
-      console.log('✅ Chromecast API inicializada correctamente');
+      chrome.cast.initialize(
+        apiConfig,
+        () => {
+          console.log('✅ Cast API inicializada correctamente');
+          this.updateCastState();
+        },
+        (error: any) => {
+          console.error('❌ Error inicializando Cast:', error);
+        }
+      );
     } catch (error) {
-      console.error('❌ Error configurando Cast Context:', error);
+      console.error('❌ Error en setupCastApi:', error);
     }
   }
 
-  private onSessionStateChanged(event: any): void {
-    console.log('📡 Estado de sesión cambiado:', event?.sessionState);
+  private sessionListener(session: any): void {
+    console.log('📡 Nueva sesión de Cast:', session);
+    this.session = session;
+
+    if (session.media && session.media.length > 0) {
+      this.currentMedia = session.media[0];
+      this.attachMediaListeners();
+    }
+
+    session.addUpdateListener((isAlive: boolean) => {
+      console.log('📊 Sesión actualizada, isAlive:', isAlive);
+      if (!isAlive) {
+        this.session = null;
+        this.currentMedia = null;
+      }
+      this.updateCastState();
+    });
+
     this.updateCastState();
   }
 
+  private receiverListener(availability: string): void {
+    console.log('📡 Disponibilidad de receptores:', availability);
+    const isAvailable = availability === chrome.cast.ReceiverAvailability.AVAILABLE;
+
+    const currentState = this.castStateSubject.value;
+    this.castStateSubject.next({
+      ...currentState,
+      isAvailable
+    });
+  }
+
+  private attachMediaListeners(): void {
+    if (!this.currentMedia) return;
+
+    this.currentMedia.addUpdateListener((isAlive: boolean) => {
+      console.log('🎬 Media actualizada, isAlive:', isAlive);
+      this.updateCastState();
+    });
+  }
+
   private updateCastState(): void {
-    const session = this.castContext?.getCurrentSession();
     const state: CastState = {
-      isAvailable: !!this.castContext,
-      isConnected: !!this.remotePlayer?.isConnected,
-      isPlaying: this.remotePlayer?.isPaused === false,
-      deviceName: session?.getCastDevice()?.friendlyName || null,
-      currentTime: this.remotePlayer?.currentTime || 0,
-      duration: this.remotePlayer?.duration || 0
+      isAvailable: this.castStateSubject.value.isAvailable,
+      isConnected: !!this.session,
+      isPlaying: this.currentMedia?.playerState === chrome.cast.media.PlayerState.PLAYING,
+      deviceName: this.session?.receiver?.friendlyName || null,
+      currentTime: this.currentMedia?.getEstimatedTime() || 0,
+      duration: this.currentMedia?.media?.duration || 0
     };
 
+    console.log('📊 Estado actualizado:', state);
     this.castStateSubject.next(state);
   }
 
-  // ========== API pública esperada por VideoPlayerComponent ==========
-
-  /**
-   * Abre el diálogo para seleccionar dispositivo
-   */
   public requestSession(): void {
-    console.log('📡 requestSession() llamado');
-    console.log('Cast Context:', this.castContext);
+    console.log('📡 Solicitando sesión de Cast...');
 
-    if (!this.castContext) {
-      console.error('❌ Cast Context no disponible');
-      alert('Cast Context no está inicializado. Recarga la página.');
-      return;
-    }
-
-    console.log('✅ Solicitando sesión de Cast...');
-
-    this.castContext.requestSession()
-      .then(() => {
-        console.log('✅ Sesión de Cast iniciada exitosamente');
-        this.updateCastState();
-      })
-      .catch((error: any) => {
-        console.error('❌ Error al iniciar sesión:', error);
-        // Algunos navegadores/SDK devuelven objetos con code/description
-        try {
-          console.error('Código de error:', error?.code);
-          console.error('Descripción:', error?.description);
-        } catch {}
-        if (error?.code === 'cancel') {
+    chrome.cast.requestSession(
+      (session: any) => {
+        console.log('✅ Sesión obtenida:', session);
+        this.sessionListener(session);
+      },
+      (error: any) => {
+        console.error('❌ Error obteniendo sesión:', error);
+        if (error.code === 'cancel') {
           console.log('ℹ️ Usuario canceló la selección');
         } else {
-          alert(`Error de Chromecast: ${error?.description || error?.message || error?.code || 'unknown'}`);
+          alert('Error de Chromecast: ' + error.description);
         }
-      });
+      }
+    );
   }
 
-  /**
-   * Carga un video en el Chromecast
-   */
   public loadMedia(streamUrl: string, title: string, posterUrl?: string): void {
-    const session = this.castContext?.getCurrentSession();
-    if (!session) {
-      console.error('No hay sesión activa de Cast');
-      alert('No hay una sesión de Chromecast activa. Selecciona un dispositivo primero.');
+    if (!this.session) {
+      console.error('❌ No hay sesión activa');
+      alert('Primero selecciona un dispositivo Chromecast');
       return;
     }
 
-    // MIME: para HLS la API de Cast suele aceptar 'application/x-mpegurl'
-    const contentType = streamUrl?.includes('.m3u8') ? 'application/x-mpegURL' : 'video/mp4';
-    const mediaInfo = new chrome.cast.media.MediaInfo(streamUrl, contentType);
+    console.log('📺 Cargando media en Chromecast:', streamUrl);
 
-    // Metadatos
+    const mediaInfo = new chrome.cast.media.MediaInfo(streamUrl, 'application/x-mpegURL');
+
     const metadata = new chrome.cast.media.GenericMediaMetadata();
+    metadata.metadataType = chrome.cast.media.MetadataType.GENERIC;
     metadata.title = title;
+
     if (posterUrl) {
       metadata.images = [new chrome.cast.Image(posterUrl)];
     }
@@ -233,89 +178,57 @@ private retrySetup() {
     mediaInfo.streamType = chrome.cast.media.StreamType.LIVE;
 
     const request = new chrome.cast.media.LoadRequest(mediaInfo);
-    request.autoplay = true;
 
-    session.loadMedia(request)
-      .then(() => {
-        console.log('✅ Media cargada en Chromecast');
+    this.session.loadMedia(
+      request,
+      (media: any) => {
+        console.log('✅ Media cargada correctamente');
+        this.currentMedia = media;
+        this.attachMediaListeners();
         this.updateCastState();
-      })
-      .catch((error: any) => {
+      },
+      (error: any) => {
         console.error('❌ Error cargando media:', error);
-        alert('Error cargando media en Chromecast: ' + (error?.message || JSON.stringify(error)));
-      });
+        alert('Error cargando video: ' + error.description);
+      }
+    );
   }
 
-  /**
-   * Reproduce el video
-   */
-  public play(): void {
-    if (this.remotePlayer?.isPaused) {
-      this.remotePlayerController?.playOrPause();
-    }
-  }
-
-  /**
-   * Pausa el video
-   */
-  public pause(): void {
-    if (!this.remotePlayer?.isPaused) {
-      this.remotePlayerController?.playOrPause();
-    }
-  }
-
-  /**
-   * Alterna play/pausa
-   */
   public togglePlayPause(): void {
-    this.remotePlayerController?.playOrPause();
-  }
-
-  /**
-   * Cambia el volumen (0-1)
-   */
-  public setVolume(volume: number): void {
-    if (this.remotePlayer) {
-      this.remotePlayer.volumeLevel = Math.max(0, Math.min(1, volume));
-      this.remotePlayerController?.setVolumeLevel();
+    if (!this.currentMedia) {
+      console.warn('⚠️ No hay media activa');
+      return;
     }
-  }
 
-  /**
-   * Silencia o activa el audio
-   */
-  public toggleMute(): void {
-    if (this.remotePlayer) {
-      this.remotePlayer.isMuted = !this.remotePlayer.isMuted;
-      this.remotePlayerController?.muteOrUnmute();
-    }
-  }
-
-  /**
-   * Busca a una posición específica (en segundos)
-   */
-  public seek(time: number): void {
-    if (this.remotePlayer) {
-      this.remotePlayer.currentTime = time;
-      this.remotePlayerController?.seek();
-    }
-  }
-
-  /**
-   * Detiene la sesión de Cast
-   */
-  public endSession(): void {
-    const session = this.castContext?.getCurrentSession();
-    if (session) {
-      session.endSession(true);
+    if (this.currentMedia.playerState === chrome.cast.media.PlayerState.PLAYING) {
+      this.currentMedia.pause(
+        new chrome.cast.media.PauseRequest(),
+        () => console.log('✅ Pausado'),
+        (error: any) => console.error('❌ Error pausando:', error)
+      );
     } else {
-      console.warn('No hay sesión para detener');
+      this.currentMedia.play(
+        new chrome.cast.media.PlayRequest(),
+        () => console.log('✅ Reproduciendo'),
+        (error: any) => console.error('❌ Error reproduciendo:', error)
+      );
     }
   }
 
-  /**
-   * Obtiene el estado actual
-   */
+  public endSession(): void {
+    if (this.session) {
+      this.session.stop(
+        () => {
+          console.log('✅ Sesión detenida');
+          this.session = null;
+          this.currentMedia = null;
+          this.updateCastState();
+        },
+        (error: any) => console.error('❌ Error deteniendo sesión:', error)
+      );
+    }
+  }
+
   public getCurrentState(): CastState {
     return this.castStateSubject.value;
   }
