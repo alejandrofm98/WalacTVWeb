@@ -49,7 +49,6 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
   showControls = true;
   private hideControlsTimeout?: number;
 
-  // Estado de Chromecast
   castState: CastState = {
     isAvailable: false,
     isConnected: false,
@@ -59,6 +58,10 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
     duration: 0
   };
 
+  loadingChromecast = false;
+  chromecastLoadingProgress = 0;
+  chromecastLoadingMessage = '';
+
   eventData?: Events;
   currentOriginalUrl: string = '';
   isChannelMode = false;
@@ -66,14 +69,15 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
   constructor(private route: ActivatedRoute) {}
 
   ngOnInit() {
-    // Suscribirse al estado de Chromecast
     this.castSubscription = this.chromecastService.castState$.subscribe(state => {
       this.castState = state;
       this.cdr.markForCheck();
 
-      // Si se conecta a Chromecast, pausar el video local
       if (state.isConnected && this.videoElement?.nativeElement) {
-        this.videoElement.nativeElement.pause();
+        const video = this.videoElement.nativeElement;
+        if (!video.paused) {
+          video.pause();
+        }
       }
     });
 
@@ -81,13 +85,10 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
       const slug = params.get('title');
       if (!slug) return;
 
-      console.log('🔍 Slug detectado:', slug);
-
       const savedChannel = this.playerState.getChannel();
       const savedEvent = this.playerState.getEvent();
 
       if (savedChannel && slugify(savedChannel.canal) === slug) {
-        console.log('✅ Canal encontrado en estado:', savedChannel.canal);
         this.channel = savedChannel;
         this.isChannelMode = true;
         this.eventTitle = savedChannel.canal;
@@ -96,7 +97,6 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
       }
 
       if (savedEvent && slugify(savedEvent.titulo) === slug) {
-        console.log('✅ Evento encontrado en estado:', savedEvent.titulo);
         this.eventData = savedEvent;
         this.isChannelMode = false;
         this.eventTitle = savedEvent.titulo;
@@ -104,7 +104,6 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
         return;
       }
 
-      console.log('🔄 Buscando en backend...');
       this.loadFromBackend(slug);
     });
   }
@@ -118,7 +117,6 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
           );
 
           if (foundChannel) {
-            console.log('✅ Canal encontrado en backend:', foundChannel.canal);
             this.channel = foundChannel;
             this.isChannelMode = true;
             this.eventTitle = foundChannel.canal;
@@ -130,47 +128,32 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
 
         this.loadEventFromBackend(slug);
       },
-      error: (err) => {
-        console.error('❌ Error al cargar canales:', err);
-        this.loadEventFromBackend(slug);
-      }
+      error: () => this.loadEventFromBackend(slug)
     });
   }
 
   private loadEventFromBackend(slug: string) {
     this.dataService.getItems().subscribe({
       next: (data) => {
-        if (!data?.eventos) {
-          console.error('❌ No se encontraron eventos');
-          return;
-        }
+        if (!data?.eventos) return;
 
         const foundEvent = data.eventos.find((e: Events) =>
           slugify(e.titulo) === slug
         );
 
         if (foundEvent) {
-          console.log('✅ Evento encontrado en backend:', foundEvent.titulo);
           this.eventData = foundEvent;
           this.isChannelMode = false;
           this.eventTitle = foundEvent.titulo;
           this.playerState.setEvent(foundEvent);
           this.loadStreamFromEvent();
-        } else {
-          console.error('❌ No se encontró contenido con slug:', slug);
         }
-      },
-      error: (err) => console.error('❌ Error al cargar eventos:', err)
+      }
     });
   }
 
   private loadStreamFromChannel() {
-    if (!this.channel?.m3u8?.length) {
-      console.error('❌ No hay URL de stream para el canal');
-      return;
-    }
-
-    console.log('📺 Cargando stream del canal:', this.channel.m3u8[0]);
+    if (!this.channel?.m3u8?.length) return;
 
     this.streamUrl = this.processStreamUrl(this.channel.m3u8[0]);
     this.currentOriginalUrl = this.channel.m3u8[0];
@@ -185,6 +168,14 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
     if (this.shouldInitializePlayer) {
       setTimeout(() => this.initializePlayer(), 0);
     }
+
+    setTimeout(() => {
+      const volumeSlider = document.querySelector('.volume-control input[type="range"]') as HTMLInputElement;
+      if (volumeSlider) {
+        const percentage = (this.volume * 100);
+        volumeSlider.style.setProperty('--value', `${percentage}%`);
+      }
+    }, 100);
   }
 
   ngOnDestroy() {
@@ -214,17 +205,21 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
     }
   }
 
-  private processStreamUrl(url: string): string {
+  private processStreamUrl(url: string, forChromecast: boolean = false): string {
     const apiBase = environment.apiWalactv;
-    const acestreamBase = environment.acestreamHost;
+    const acestreamBase = forChromecast ? 'https://acestream.walerike.com' : environment.acestreamHost;
 
     try {
       if (url.includes('127.0.0.1:6878') || url.includes('localhost:6878')) {
         const id = new URL(url).searchParams.get('id');
-        if (id) return `${acestreamBase}/ace/manifest.m3u8?id=${id}`;
+        if (id) {
+          return `${acestreamBase}/ace/manifest.m3u8?id=${id}`;
+        }
       }
 
-      if (url.startsWith(acestreamBase)) return url;
+      if (url.includes('acestream.walerike.com') || url.startsWith(acestreamBase)) {
+        return url;
+      }
 
       if (url.startsWith('https://walactv.walerike.com/proxy?url=')) {
         return url.replace('https://walactv.walerike.com', apiBase);
@@ -232,6 +227,14 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
 
       if (url.startsWith('/apiwalactv')) {
         return url.replace('/apiwalactv', apiBase);
+      }
+
+      if (url.startsWith('/apiace')) {
+        return url.replace('/apiace', acestreamBase);
+      }
+
+      if (url.startsWith('http://') || url.startsWith('https://')) {
+        return url;
       }
 
       return url;
@@ -247,8 +250,6 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
 
     const urlToUse = Array.isArray(this.streamUrl) ? this.streamUrl[0] : this.streamUrl;
     if (!urlToUse) return;
-
-    console.log('🎬 Inicializando reproductor con URL:', urlToUse);
 
     if (this.hls) {
       this.hls.destroy();
@@ -291,15 +292,13 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
       });
 
       this.hls.on(Hls.Events.MANIFEST_PARSED, () => {
-        video.play().catch(err => {
+        video.play().catch(() => {
           video.muted = true;
           return video.play();
         });
       });
 
       this.hls.on(Hls.Events.ERROR, (event, data) => {
-        console.error('HLS Error:', data.type, data.details);
-
         if (data.fatal) {
           switch (data.type) {
             case Hls.ErrorTypes.NETWORK_ERROR:
@@ -347,19 +346,18 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
     this.videoElement.nativeElement.muted = !this.videoElement.nativeElement.muted;
   }
 
-setVolume(event: any): void {
-  const newVolume = parseFloat(event.target.value);
-  this.volume = newVolume;
+  setVolume(event: any): void {
+    const newVolume = parseFloat(event.target.value);
+    this.volume = newVolume;
 
-  // Actualizar el color de relleno del slider
-  const percentage = (newVolume * 100);
-  event.target.style.setProperty('--value', `${percentage}%`);
+    const percentage = (newVolume * 100);
+    event.target.style.setProperty('--value', `${percentage}%`);
 
-  if (this.videoElement && this.videoElement.nativeElement) {
-    this.videoElement.nativeElement.volume = newVolume;
-    this.isMuted = newVolume === 0;
+    if (this.videoElement?.nativeElement) {
+      this.videoElement.nativeElement.volume = newVolume;
+      this.isMuted = newVolume === 0;
+    }
   }
-}
 
   toggleFullscreen() {
     const video = this.videoElement.nativeElement;
@@ -391,64 +389,159 @@ setVolume(event: any): void {
   }
 
   changeChannelStream(index: number) {
-    if (this.channel && this.channel.m3u8 && this.channel.m3u8[index]) {
-      console.log('🔄 Cambiando a stream alternativo:', this.channel.m3u8[index]);
+    if (this.channel?.m3u8?.[index]) {
       this.streamUrl = this.channel.m3u8[index];
       this.currentOriginalUrl = this.channel.m3u8[index];
       this.initializePlayer();
     }
   }
 
-  // ========== MÉTODOS DE CHROMECAST ==========
+  async startCasting() {
+    if (!this.castState.isAvailable) {
+      alert('Chromecast no está disponible');
+      return;
+    }
 
-startCasting() {
-  console.log('🎯 startCasting() llamado');
-  console.log('Cast State:', this.castState);
+    try {
+      this.loadingChromecast = true;
+      this.chromecastLoadingProgress = 10;
+      this.chromecastLoadingMessage = 'Preparando stream...';
+      this.cdr.detectChanges();
 
-  if (!this.castState.isAvailable) {
-    console.warn('⚠️ Chromecast no disponible');
-    alert('Chromecast no está disponible');
-    return;
-  }
+      const videoEl = this.videoElement?.nativeElement;
+      const originalUrl = this.currentOriginalUrl;
 
-  console.log('✅ Chromecast disponible, continuando...');
-
-  if (this.castState.isConnected) {
-    console.log('📺 Ya conectado, cargando media...');
-    this.loadMediaToChromecast();
-  } else {
-    console.log('🔌 No conectado, solicitando sesión...');
-    this.chromecastService.requestSession();
-
-    setTimeout(() => {
-      console.log('⏱️ Verificando conexión después de timeout...');
-      const state = this.chromecastService.getCurrentState();
-      console.log('Estado actual:', state);
-
-      if (state.isConnected) {
-        console.log('✅ Conectado, cargando media...');
-        this.loadMediaToChromecast();
-      } else {
-        console.log('❌ No se pudo conectar');
+      if (!originalUrl) {
+        alert('No hay stream cargado');
+        this.loadingChromecast = false;
+        return;
       }
-    }, 1000);
-  }
-}
 
-  private loadMediaToChromecast() {
-    const streamUrl = Array.isArray(this.streamUrl) ? this.streamUrl[0] : this.streamUrl;
-    if (streamUrl) {
-      console.log('📡 Cargando media en Chromecast:', streamUrl);
-      this.chromecastService.loadMedia(streamUrl, this.eventTitle);
+      let chromecastUrl = this.processStreamUrl(originalUrl, true);
+
+      if (chromecastUrl.includes('/getstream?')) {
+        chromecastUrl = chromecastUrl.replace('/getstream?', '/manifest.m3u8?');
+      }
+
+      // Pre-inicializar stream para AceStream
+      if (videoEl?.paused) {
+        this.chromecastLoadingMessage = 'Iniciando buffer...';
+        this.chromecastLoadingProgress = 20;
+        this.cdr.detectChanges();
+
+        try {
+          await videoEl.play();
+        } catch {
+          videoEl.muted = true;
+          await videoEl.play();
+        }
+
+        // Esperar 30 segundos para buffer
+        for (let i = 0; i < 30; i++) {
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          this.chromecastLoadingProgress = 20 + Math.floor((i / 30) * 50);
+          this.chromecastLoadingMessage = `Cargando buffer... ${i + 1}/30s`;
+          this.cdr.detectChanges();
+        }
+      }
+
+      this.chromecastLoadingMessage = 'Conectando con Chromecast...';
+      this.chromecastLoadingProgress = 80;
+      this.cdr.detectChanges();
+
+      if (this.castState.isConnected) {
+        await this.loadMediaToChromecast();
+      } else {
+        await this.chromecastService.requestSession();
+
+        this.chromecastLoadingMessage = 'Enviando stream...';
+        this.chromecastLoadingProgress = 90;
+        this.cdr.detectChanges();
+
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        await this.loadMediaToChromecast();
+      }
+
+      this.chromecastLoadingProgress = 100;
+      this.chromecastLoadingMessage = 'Stream cargado';
+      this.cdr.detectChanges();
+
+      setTimeout(() => {
+        this.loadingChromecast = false;
+        this.cdr.detectChanges();
+      }, 2000);
+
+    } catch (error: any) {
+      this.loadingChromecast = false;
+      this.cdr.detectChanges();
+
+      if (error.code !== 'cancel') {
+        alert('Error al conectar con Chromecast:\n\n' + (error.message || 'Error desconocido'));
+      }
+
+      const videoEl = this.videoElement?.nativeElement;
+      if (videoEl?.paused) {
+        videoEl.play().catch(() => {});
+      }
     }
   }
 
+  private async loadMediaToChromecast(): Promise<void> {
+    const originalUrl = this.currentOriginalUrl;
+
+    if (!originalUrl) {
+      throw new Error('No hay stream disponible');
+    }
+
+    let chromecastUrl = this.processStreamUrl(originalUrl, true);
+
+    if (chromecastUrl.includes('/getstream?')) {
+      chromecastUrl = chromecastUrl.replace('/getstream?', '/manifest.m3u8?');
+    }
+
+    if (!chromecastUrl.startsWith('https://acestream.walerike.com')) {
+      const url = new URL(chromecastUrl.startsWith('http') ? chromecastUrl : 'https://dummy.com' + chromecastUrl);
+      const id = url.searchParams.get('id');
+
+      if (id) {
+        chromecastUrl = `https://acestream.walerike.com/ace/manifest.m3u8?id=${id}`;
+      } else {
+        throw new Error('URL de stream inválida');
+      }
+    }
+
+    if (chromecastUrl.includes('localhost') || chromecastUrl.includes('127.0.0.1')) {
+      throw new Error('No se pueden transmitir URLs locales a Chromecast');
+    }
+
+    if (!chromecastUrl.startsWith('https://')) {
+      throw new Error('Chromecast requiere URLs HTTPS');
+    }
+
+    const currentState = this.chromecastService.getCurrentState();
+    if (!currentState.isConnected) {
+      throw new Error('La conexión con Chromecast se perdió');
+    }
+
+    const videoEl = this.videoElement?.nativeElement;
+    if (videoEl && !videoEl.paused) {
+      videoEl.pause();
+    }
+
+    await this.chromecastService.loadMedia(chromecastUrl, this.eventTitle);
+  }
+
   stopCasting() {
-    console.log('🛑 Deteniendo Chromecast');
     this.chromecastService.endSession();
+
+    const videoEl = this.videoElement?.nativeElement;
+    if (videoEl?.paused) {
+      videoEl.play().catch(() => {});
+    }
   }
 
   toggleCastPlayPause() {
+    if (!this.castState.isConnected) return;
     this.chromecastService.togglePlayPause();
   }
 }

@@ -1,4 +1,3 @@
-// chromecast.service.ts
 import { Injectable } from '@angular/core';
 import { BehaviorSubject, Observable } from 'rxjs';
 
@@ -32,34 +31,25 @@ export class ChromecastService {
   public castState$: Observable<CastState> = this.castStateSubject.asObservable();
 
   constructor() {
-    console.log('🏗️ ChromecastService constructor');
     this.initializeCast();
   }
 
   private initializeCast(): void {
-    // Configurar callback global
     (window as any)['__onGCastApiAvailable'] = (isAvailable: boolean) => {
-      console.log('🎯 Cast API Available:', isAvailable);
       if (isAvailable) {
         this.setupCastApi();
       }
     };
 
-    // Si ya está disponible
     if ((window as any).chrome?.cast?.isAvailable) {
-      console.log('✅ Cast ya disponible, inicializando...');
       this.setupCastApi();
-    } else {
-      console.log('⏳ Esperando Cast API...');
     }
   }
 
   private setupCastApi(): void {
     try {
-      const sessionRequest = new chrome.cast.SessionRequest(
-        chrome.cast.media.DEFAULT_MEDIA_RECEIVER_APP_ID
-      );
-
+      const appId = chrome.cast.media.DEFAULT_MEDIA_RECEIVER_APP_ID;
+      const sessionRequest = new chrome.cast.SessionRequest(appId);
       const apiConfig = new chrome.cast.ApiConfig(
         sessionRequest,
         (session: any) => this.sessionListener(session),
@@ -68,21 +58,15 @@ export class ChromecastService {
 
       chrome.cast.initialize(
         apiConfig,
-        () => {
-          console.log('✅ Cast API inicializada correctamente');
-          this.updateCastState();
-        },
-        (error: any) => {
-          console.error('❌ Error inicializando Cast:', error);
-        }
+        () => this.updateCastState(),
+        (error: any) => console.error('Error inicializando Cast:', error)
       );
     } catch (error) {
-      console.error('❌ Error en setupCastApi:', error);
+      console.error('Error en setupCastApi:', error);
     }
   }
 
   private sessionListener(session: any): void {
-    console.log('📡 Nueva sesión de Cast:', session);
     this.session = session;
 
     if (session.media && session.media.length > 0) {
@@ -91,7 +75,6 @@ export class ChromecastService {
     }
 
     session.addUpdateListener((isAlive: boolean) => {
-      console.log('📊 Sesión actualizada, isAlive:', isAlive);
       if (!isAlive) {
         this.session = null;
         this.currentMedia = null;
@@ -103,10 +86,9 @@ export class ChromecastService {
   }
 
   private receiverListener(availability: string): void {
-    console.log('📡 Disponibilidad de receptores:', availability);
     const isAvailable = availability === chrome.cast.ReceiverAvailability.AVAILABLE;
-
     const currentState = this.castStateSubject.value;
+
     this.castStateSubject.next({
       ...currentState,
       isAvailable
@@ -116,8 +98,7 @@ export class ChromecastService {
   private attachMediaListeners(): void {
     if (!this.currentMedia) return;
 
-    this.currentMedia.addUpdateListener((isAlive: boolean) => {
-      console.log('🎬 Media actualizada, isAlive:', isAlive);
+    this.currentMedia.addUpdateListener(() => {
       this.updateCastState();
     });
   }
@@ -132,85 +113,170 @@ export class ChromecastService {
       duration: this.currentMedia?.media?.duration || 0
     };
 
-    console.log('📊 Estado actualizado:', state);
     this.castStateSubject.next(state);
   }
 
-  public requestSession(): void {
-    console.log('📡 Solicitando sesión de Cast...');
-
-    chrome.cast.requestSession(
-      (session: any) => {
-        console.log('✅ Sesión obtenida:', session);
-        this.sessionListener(session);
-      },
-      (error: any) => {
-        console.error('❌ Error obteniendo sesión:', error);
-        if (error.code === 'cancel') {
-          console.log('ℹ️ Usuario canceló la selección');
-        } else {
-          alert('Error de Chromecast: ' + error.description);
+  public requestSession(): Promise<void> {
+    return new Promise((resolve, reject) => {
+      chrome.cast.requestSession(
+        (session: any) => {
+          this.sessionListener(session);
+          resolve();
+        },
+        (error: any) => {
+          console.error('Error obteniendo sesión:', error);
+          reject(error);
         }
-      }
-    );
+      );
+    });
   }
 
-  public loadMedia(streamUrl: string, title: string, posterUrl?: string): void {
+  public async loadMedia(streamUrl: string, title: string, posterUrl?: string): Promise<void> {
     if (!this.session) {
-      console.error('❌ No hay sesión activa');
-      alert('Primero selecciona un dispositivo Chromecast');
-      return;
+      throw new Error('No hay sesión activa de Chromecast');
     }
 
-    console.log('📺 Cargando media en Chromecast:', streamUrl);
-
-    const mediaInfo = new chrome.cast.media.MediaInfo(streamUrl, 'application/x-mpegURL');
-
-    const metadata = new chrome.cast.media.GenericMediaMetadata();
-    metadata.metadataType = chrome.cast.media.MetadataType.GENERIC;
-    metadata.title = title;
-
-    if (posterUrl) {
-      metadata.images = [new chrome.cast.Image(posterUrl)];
+    if (streamUrl.includes('localhost') || streamUrl.includes('127.0.0.1')) {
+      throw new Error('No se pueden transmitir URLs locales a Chromecast');
     }
 
-    mediaInfo.metadata = metadata;
-    mediaInfo.streamType = chrome.cast.media.StreamType.LIVE;
+    try {
+      let finalUrl = streamUrl;
 
-    const request = new chrome.cast.media.LoadRequest(mediaInfo);
-
-    this.session.loadMedia(
-      request,
-      (media: any) => {
-        console.log('✅ Media cargada correctamente');
-        this.currentMedia = media;
-        this.attachMediaListeners();
-        this.updateCastState();
-      },
-      (error: any) => {
-        console.error('❌ Error cargando media:', error);
-        alert('Error cargando video: ' + error.description);
+      // Convertir getstream a manifest si es necesario
+      if (streamUrl.includes('/getstream?')) {
+        finalUrl = streamUrl.replace('/getstream?', '/manifest.m3u8?');
       }
-    );
+
+      // Crear MediaInfo
+      const mediaInfo = new chrome.cast.media.MediaInfo(finalUrl, 'application/x-mpegURL');
+
+      const metadata = new chrome.cast.media.GenericMediaMetadata();
+      metadata.metadataType = chrome.cast.media.MetadataType.GENERIC;
+      metadata.title = title;
+
+      if (posterUrl) {
+        metadata.images = [new chrome.cast.Image(posterUrl)];
+      }
+
+      mediaInfo.metadata = metadata;
+      mediaInfo.streamType = chrome.cast.media.StreamType.LIVE;
+      mediaInfo.duration = null;
+
+      const request = new chrome.cast.media.LoadRequest(mediaInfo);
+      request.autoplay = true;
+      request.currentTime = 0;
+
+      return new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          if (this.currentMedia) {
+            const finalState = this.currentMedia.playerState;
+            const finalReason = this.currentMedia.idleReason;
+
+            if (finalState === chrome.cast.media.PlayerState.IDLE && finalReason === null) {
+              reject(new Error(
+                'El stream no inició la reproducción.\n\n' +
+                'Verifica que el dispositivo tenga acceso a Internet y que la URL sea accesible.'
+              ));
+            } else {
+              resolve();
+            }
+          } else {
+            reject(new Error('Timeout sin respuesta del Chromecast'));
+          }
+        }, 45000);
+
+        this.session.loadMedia(
+          request,
+          (media: any) => {
+            this.currentMedia = media;
+            this.attachMediaListeners();
+            this.updateCastState();
+
+            let checkCount = 0;
+            const maxChecks = 30;
+
+            const stateChecker = setInterval(() => {
+              checkCount++;
+
+              if (!this.currentMedia) {
+                clearInterval(stateChecker);
+                clearTimeout(timeout);
+                reject(new Error('Se perdió la referencia al media'));
+                return;
+              }
+
+              const state = this.currentMedia.playerState;
+              const idleReason = this.currentMedia.idleReason;
+
+              if (state === chrome.cast.media.PlayerState.PLAYING) {
+                clearInterval(stateChecker);
+                clearTimeout(timeout);
+                resolve();
+                return;
+              }
+
+              if (state === chrome.cast.media.PlayerState.IDLE &&
+                  idleReason === chrome.cast.media.IdleReason.ERROR) {
+                clearInterval(stateChecker);
+                clearTimeout(timeout);
+                reject(new Error(
+                  'Error al reproducir el stream.\n\n' +
+                  'Verifica que el dispositivo tenga acceso a Internet.'
+                ));
+                return;
+              }
+
+              if (checkCount >= maxChecks) {
+                clearInterval(stateChecker);
+                clearTimeout(timeout);
+                resolve();
+              }
+            }, 1000);
+          },
+          (error: any) => {
+            clearTimeout(timeout);
+
+            let errorMsg = 'Error al cargar el stream en Chromecast.\n\n';
+
+            if (error.code === 'LOAD_FAILED') {
+              errorMsg += 'El dispositivo no pudo cargar el stream.\n' +
+                        'Verifica la conexión y el formato del stream.';
+            } else if (error.code === 'TIMEOUT') {
+              errorMsg += 'El stream tardó demasiado en responder.';
+            } else if (error.description) {
+              errorMsg += error.description;
+            } else {
+              errorMsg += 'Código de error: ' + error.code;
+            }
+
+            reject(new Error(errorMsg));
+          }
+        );
+      });
+
+    } catch (error: any) {
+      console.error('Error en loadMedia:', error);
+      throw error;
+    }
   }
 
   public togglePlayPause(): void {
-    if (!this.currentMedia) {
-      console.warn('⚠️ No hay media activa');
-      return;
-    }
+    if (!this.currentMedia) return;
 
-    if (this.currentMedia.playerState === chrome.cast.media.PlayerState.PLAYING) {
+    const playerState = this.currentMedia.playerState;
+
+    if (playerState === chrome.cast.media.PlayerState.PLAYING) {
       this.currentMedia.pause(
         new chrome.cast.media.PauseRequest(),
-        () => console.log('✅ Pausado'),
-        (error: any) => console.error('❌ Error pausando:', error)
+        () => this.updateCastState(),
+        (error: any) => console.error('Error pausando:', error)
       );
     } else {
       this.currentMedia.play(
         new chrome.cast.media.PlayRequest(),
-        () => console.log('✅ Reproduciendo'),
-        (error: any) => console.error('❌ Error reproduciendo:', error)
+        () => this.updateCastState(),
+        (error: any) => console.error('Error reproduciendo:', error)
       );
     }
   }
@@ -219,12 +285,11 @@ export class ChromecastService {
     if (this.session) {
       this.session.stop(
         () => {
-          console.log('✅ Sesión detenida');
           this.session = null;
           this.currentMedia = null;
           this.updateCastState();
         },
-        (error: any) => console.error('❌ Error deteniendo sesión:', error)
+        (error: any) => console.error('Error deteniendo sesión:', error)
       );
     }
   }
