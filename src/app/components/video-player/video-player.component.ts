@@ -261,31 +261,63 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
 
     if (Hls.isSupported()) {
       this.hls = new Hls({
+        // Configuración optimizada para estabilidad (más parecido a VLC)
         debug: false,
+
+        // Buffer más grande = más estable
+        maxBufferLength: 60,              // VLC usa ~30-60s (antes: 30)
+        maxMaxBufferLength: 600,          // Mantener
+        maxBufferSize: 60 * 1000 * 1000,  // Mantener
+        backBufferLength: 30,             // Reducido de 90 para liberar memoria
+
+        // Tolerancia a problemas de red
+        maxBufferHole: 1.0,               // Más tolerante (antes: 0.5)
+        highBufferWatchdogPeriod: 5,      // Más tiempo antes de limpiar buffer (antes: 3)
+
+        // Live streaming optimizado para estabilidad
+        liveSyncDurationCount: 5,         // Más segmentos de sincronización (antes: 3)
+        liveMaxLatencyDurationCount: 10,  // Más latencia permitida (antes: Infinity)
+        liveDurationInfinity: false,      // Desactivar para mejor gestión de buffer
+        liveBackBufferLength: 30,         // Buffer trasero para live
+
+        // Carga y reintentos más agresivos
         autoStartLoad: true,
         startPosition: -1,
-        maxBufferLength: 30,
-        maxMaxBufferLength: 600,
-        maxBufferSize: 60 * 1000 * 1000,
-        maxBufferHole: 0.5,
-        highBufferWatchdogPeriod: 3,
-        liveSyncDurationCount: 3,
-        liveMaxLatencyDurationCount: Infinity,
-        liveDurationInfinity: true,
-        enableWorker: true,
-        manifestLoadingTimeOut: 20000,
-        manifestLoadingMaxRetry: 10,
-        levelLoadingTimeOut: 20000,
-        levelLoadingMaxRetry: 10,
-        fragLoadingTimeOut: 40000,
-        fragLoadingMaxRetry: 10,
-        fragLoadingRetryDelay: 1000,
+
+        // Timeouts más largos
+        manifestLoadingTimeOut: 30000,    // 30s (antes: 20s)
+        manifestLoadingMaxRetry: 15,      // Más reintentos (antes: 10)
+        manifestLoadingRetryDelay: 2000,  // 2s entre reintentos
+
+        levelLoadingTimeOut: 30000,       // 30s (antes: 20s)
+        levelLoadingMaxRetry: 15,         // Más reintentos (antes: 10)
+        levelLoadingRetryDelay: 2000,
+
+        fragLoadingTimeOut: 60000,        // 60s para fragmentos (antes: 40s)
+        fragLoadingMaxRetry: 15,          // Más reintentos (antes: 10)
+        fragLoadingRetryDelay: 2000,      // 2s entre reintentos (antes: 1s)
+
+        // Desactivar modo baja latencia
         lowLatencyMode: false,
-        backBufferLength: 90,
+
+        // Workers para mejor rendimiento
+        enableWorker: true,
+
+        // Configuración de red
         xhrSetup: (xhr: XMLHttpRequest) => {
-          xhr.timeout = 40000;
+          xhr.timeout = 60000;            // 60s (antes: 40s)
           xhr.withCredentials = false;
-        }
+        },
+
+        // Adaptive Bitrate más conservador
+        abrEwmaDefaultEstimate: 500000,   // Estimación inicial conservadora (500kbps)
+        abrBandWidthFactor: 0.85,         // Factor más conservador (default: 0.95)
+        abrBandWidthUpFactor: 0.7,        // Más lento para subir calidad
+
+        // Prevenir stalls
+        maxFragLookUpTolerance: 0.5,      // Más tolerante buscando fragmentos
+        maxStarvationDelay: 6,            // Más tiempo antes de considerar stalled (6s)
+        maxLoadingDelay: 6,               // Más tiempo de carga permitido
       });
 
       this.hls.attachMedia(video);
@@ -295,30 +327,51 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
       });
 
       this.hls.on(Hls.Events.MANIFEST_PARSED, () => {
+        // Intentar reproducir, si falla activar mute
         video.play().catch(() => {
           video.muted = true;
           return video.play();
         });
       });
 
+      // Manejo de errores mejorado
       this.hls.on(Hls.Events.ERROR, (event, data) => {
+        console.warn('HLS Error:', data.type, data.details, data.fatal);
+
         if (data.fatal) {
           switch (data.type) {
             case Hls.ErrorTypes.NETWORK_ERROR:
-              setTimeout(() => this.hls?.startLoad(), 1000);
+              console.log('Error de red, intentando recuperar...');
+              // Esperar más antes de reintentar
+              setTimeout(() => {
+                if (this.hls) {
+                  this.hls.startLoad();
+                }
+              }, 3000); // 3s (antes: 1s)
               break;
+
             case Hls.ErrorTypes.MEDIA_ERROR:
+              console.log('Error de media, intentando recuperar...');
               this.hls?.recoverMediaError();
               break;
+
             default:
+              console.error('Error fatal irrecuperable, reiniciando player...');
               this.hls?.destroy();
-              setTimeout(() => this.initializePlayer(), 2000);
+              // Esperar más antes de reiniciar completamente
+              setTimeout(() => this.initializePlayer(), 5000); // 5s (antes: 2s)
               break;
           }
         }
       });
 
+      // Logging adicional para debugging (opcional, quitar en producción)
+      this.hls.on(Hls.Events.BUFFER_APPENDED, () => {
+        const buffered = video.buffered;
+      });
+
     } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+      // Safari nativo
       video.src = urlToUse;
       video.addEventListener('loadedmetadata', () => video.play());
     }
@@ -337,6 +390,18 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
       this.volume = video.volume;
       this.isMuted = video.muted;
       this.cdr.markForCheck();
+    });
+
+    // Detectar y manejar stalls
+    video.addEventListener('waiting', () => {
+      console.log('Video buffering...');
+    });
+
+    video.addEventListener('stalled', () => {
+      console.warn('Video stalled, intentando recuperar...');
+      if (this.hls) {
+        this.hls.startLoad();
+      }
     });
   }
 
