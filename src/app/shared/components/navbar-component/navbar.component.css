@@ -72,6 +72,7 @@
 .logout-btn {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 8px;
   padding: 10px 18px;
   background-color: #dc3545;
@@ -83,6 +84,8 @@
   cursor: pointer;
   transition: all 0.3s ease;
   box-shadow: 0 2px 8px rgba(220, 53, 69, 0.3);
+  white-space: nowrap;
+  min-height: 44px;
 }
 
 .logout-btn:hover:not(:disabled) {
@@ -103,6 +106,7 @@
 
 .logout-btn svg {
   flex-shrink: 0;
+  display: block;
 }
 
 .spinner {
@@ -122,18 +126,14 @@
   display: flex;
   align-items: center;
   gap: 6px;
+  color: white;
 }
 
 /* ===== SOLUCIÓN: ESPACIADO PARA NAVBAR FIJO ===== */
-/*
-  Agrega esta clase al contenedor principal de tu contenido
-  (el que está debajo del navbar)
-*/
 .main-content {
-  padding-top: 80px; /* Ajusta según la altura real de tu navbar */
+  padding-top: 80px;
 }
 
-/* O si usas body directamente */
 body {
   padding-top: 80px;
 }
@@ -203,13 +203,14 @@ a[routerLink="/channels"].active-link,
   }
 
   .logout-btn {
-    padding: 8px 14px;
-    font-size: 13px;
+    padding: 10px 16px;
+    font-size: 14px;
+    min-height: 44px;
   }
 
   .logout-btn svg {
-    width: 16px;
-    height: 16px;
+    width: 18px;
+    height: 18px;
   }
 
   .menu-toggle {
@@ -250,7 +251,6 @@ a[routerLink="/channels"].active-link,
     text-align: left;
   }
 
-  /* Ajustar padding para móvil */
   .main-content,
   body {
     padding-top: 65px;
@@ -268,24 +268,29 @@ a[routerLink="/channels"].active-link,
     font-size: 16px;
   }
 
-  .logout-btn span:not(.spinner) {
-    display: none;
-  }
-
-  .logout-btn svg:not(.spinner) {
-    display: block;
-  }
-
+  /* SOLUCIÓN: Mostrar solo el icono en pantallas muy pequeñas */
   .logout-btn {
-    padding: 8px;
-    min-width: 40px;
-    justify-content: center;
+    padding: 10px;
+    min-width: 44px;
+    gap: 0;
   }
 
-  /* Ajustar padding para móvil pequeño */
+  /* Ocultar el TEXTO pero mantener el icono visible */
+  .logout-btn span {
+    width: 20px;
+    height: 20px;
+    font-size: 0;
+    overflow: hidden;
+  }
+
+  .logout-btn svg {
+    width: 20px;
+    height: 20px;
+    margin: 0;
+  }
+
   .main-content,
   body {
     padding-top: 60px;
   }
 }
-
