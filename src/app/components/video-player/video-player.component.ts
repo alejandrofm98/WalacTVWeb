@@ -9,18 +9,17 @@ import {
   OnInit,
   ViewChild
 } from '@angular/core';
-import { CommonModule } from '@angular/common';
-import { ActivatedRoute } from '@angular/router';
-import { DataService } from '../../services/data.service';
-import { PlayerStateService } from '../../services/player-state.service';
-import { ChromecastService, CastState } from '../../services/chromecast.service';
+import {CommonModule} from '@angular/common';
+import {ActivatedRoute} from '@angular/router';
+import {DataService} from '../../services/data.service';
+import {PlayerStateService} from '../../services/player-state.service';
 import Hls from 'hls.js';
-import { Events } from '../../models';
-import { slugify } from '../../utils/slugify';
-import { NavbarComponent } from '../../shared/components/navbar-component/navbar.component';
-import { environment } from '../../../environments/environment';
-import { Channel } from '../../models/channel.model';
-import { Subscription } from 'rxjs';
+import {Events} from '../../models';
+import {slugify} from '../../utils/slugify';
+import {NavbarComponent} from '../../shared/components/navbar-component/navbar.component';
+import {environment} from '../../../environments/environment';
+import {Channel} from '../../models/channel.model';
+import {Subscription} from 'rxjs';
 
 @Component({
   selector: 'app-video-player',
@@ -39,7 +38,6 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
   private shouldInitializePlayer = false;
   private dataService = inject(DataService);
   private playerState = inject(PlayerStateService);
-  private chromecastService = inject(ChromecastService);
   private cdr = inject(ChangeDetectorRef);
   private castSubscription?: Subscription;
 
@@ -49,37 +47,15 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
   showControls = true;
   private hideControlsTimeout?: number;
 
-  castState: CastState = {
-    isAvailable: false,
-    isConnected: false,
-    isPlaying: false,
-    deviceName: null,
-    currentTime: 0,
-    duration: 0
-  };
-
-  loadingChromecast = false;
-  chromecastLoadingProgress = 0;
-  chromecastLoadingMessage = '';
 
   eventData?: Events;
   currentOriginalUrl: string = '';
   isChannelMode = false;
 
-  constructor(private route: ActivatedRoute) {}
+  constructor(private route: ActivatedRoute) {
+  }
 
   ngOnInit() {
-    this.castSubscription = this.chromecastService.castState$.subscribe(state => {
-      this.castState = state;
-      this.cdr.markForCheck();
-
-      if (state.isConnected && this.videoElement?.nativeElement) {
-        const video = this.videoElement.nativeElement;
-        if (!video.paused) {
-          video.pause();
-        }
-      }
-    });
 
     this.route.paramMap.subscribe(params => {
       const slug = params.get('title');
@@ -189,6 +165,33 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
     if (this.castSubscription) {
       this.castSubscription.unsubscribe();
     }
+  }
+
+  get availableStreams(): string[] {
+    if (this.isChannelMode && this.channel) {
+      return this.channel.m3u8 ?? [];
+    }
+    if (!this.isChannelMode && this.eventData) {
+      // Si el evento tiene varios enlaces, los aplana todos
+      return this.eventData.enlaces?.flatMap(e => e.m3u8 ?? []) ?? [];
+    }
+    return [];
+  }
+
+  get streamSectionTitle(): string {
+    if (this.isChannelMode && this.channel) {
+      return this.channel.canal;
+    }
+
+    if (!this.isChannelMode && this.eventData?.enlaces?.length) {
+      // Busca el enlace que contiene el stream actual
+      const activeLink = this.eventData.enlaces.find(e =>
+        e.m3u8?.includes(this.currentOriginalUrl)
+      );
+      return activeLink?.canal || this.eventData.enlaces[0].canal || 'Stream';
+    }
+
+    return 'Stream';
   }
 
   private loadStreamFromEvent() {
@@ -360,8 +363,42 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   toggleFullscreen() {
-    const video = this.videoElement.nativeElement;
-    document.fullscreenElement ? document.exitFullscreen() : video.requestFullscreen();
+    const container = this.videoElement.nativeElement.parentElement;
+
+    if (!container) return;
+
+    const doc = document as any;
+    const elem = container as any;
+
+    // Verificar si estamos en fullscreen
+    const isInFullscreen = doc.fullscreenElement ||
+      doc.webkitFullscreenElement ||
+      doc.mozFullScreenElement ||
+      doc.msFullscreenElement;
+
+    if (!isInFullscreen) {
+      // Entrar en fullscreen
+      if (elem.requestFullscreen) {
+        elem.requestFullscreen();
+      } else if (elem.webkitRequestFullscreen) {
+        elem.webkitRequestFullscreen();
+      } else if (elem.mozRequestFullScreen) {
+        elem.mozRequestFullScreen();
+      } else if (elem.msRequestFullscreen) {
+        elem.msRequestFullscreen();
+      }
+    } else {
+      // Salir de fullscreen
+      if (doc.exitFullscreen) {
+        doc.exitFullscreen();
+      } else if (doc.webkitExitFullscreen) {
+        doc.webkitExitFullscreen();
+      } else if (doc.mozCancelFullScreen) {
+        doc.mozCancelFullScreen();
+      } else if (doc.msExitFullscreen) {
+        doc.msExitFullscreen();
+      }
+    }
   }
 
   onMouseMove() {
@@ -396,152 +433,5 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
     }
   }
 
-  async startCasting() {
-    if (!this.castState.isAvailable) {
-      alert('Chromecast no está disponible');
-      return;
-    }
 
-    try {
-      this.loadingChromecast = true;
-      this.chromecastLoadingProgress = 10;
-      this.chromecastLoadingMessage = 'Preparando stream...';
-      this.cdr.detectChanges();
-
-      const videoEl = this.videoElement?.nativeElement;
-      const originalUrl = this.currentOriginalUrl;
-
-      if (!originalUrl) {
-        alert('No hay stream cargado');
-        this.loadingChromecast = false;
-        return;
-      }
-
-      let chromecastUrl = this.processStreamUrl(originalUrl, true);
-
-      if (chromecastUrl.includes('/getstream?')) {
-        chromecastUrl = chromecastUrl.replace('/getstream?', '/manifest.m3u8?');
-      }
-
-      // Pre-inicializar stream para AceStream
-      if (videoEl?.paused) {
-        this.chromecastLoadingMessage = 'Iniciando buffer...';
-        this.chromecastLoadingProgress = 20;
-        this.cdr.detectChanges();
-
-        try {
-          await videoEl.play();
-        } catch {
-          videoEl.muted = true;
-          await videoEl.play();
-        }
-
-        // Esperar 30 segundos para buffer
-        for (let i = 0; i < 30; i++) {
-          await new Promise(resolve => setTimeout(resolve, 1000));
-          this.chromecastLoadingProgress = 20 + Math.floor((i / 30) * 50);
-          this.chromecastLoadingMessage = `Cargando buffer... ${i + 1}/30s`;
-          this.cdr.detectChanges();
-        }
-      }
-
-      this.chromecastLoadingMessage = 'Conectando con Chromecast...';
-      this.chromecastLoadingProgress = 80;
-      this.cdr.detectChanges();
-
-      if (this.castState.isConnected) {
-        await this.loadMediaToChromecast();
-      } else {
-        await this.chromecastService.requestSession();
-
-        this.chromecastLoadingMessage = 'Enviando stream...';
-        this.chromecastLoadingProgress = 90;
-        this.cdr.detectChanges();
-
-        await new Promise(resolve => setTimeout(resolve, 2000));
-        await this.loadMediaToChromecast();
-      }
-
-      this.chromecastLoadingProgress = 100;
-      this.chromecastLoadingMessage = 'Stream cargado';
-      this.cdr.detectChanges();
-
-      setTimeout(() => {
-        this.loadingChromecast = false;
-        this.cdr.detectChanges();
-      }, 2000);
-
-    } catch (error: any) {
-      this.loadingChromecast = false;
-      this.cdr.detectChanges();
-
-      if (error.code !== 'cancel') {
-        alert('Error al conectar con Chromecast:\n\n' + (error.message || 'Error desconocido'));
-      }
-
-      const videoEl = this.videoElement?.nativeElement;
-      if (videoEl?.paused) {
-        videoEl.play().catch(() => {});
-      }
-    }
-  }
-
-  private async loadMediaToChromecast(): Promise<void> {
-    const originalUrl = this.currentOriginalUrl;
-
-    if (!originalUrl) {
-      throw new Error('No hay stream disponible');
-    }
-
-    let chromecastUrl = this.processStreamUrl(originalUrl, true);
-
-    if (chromecastUrl.includes('/getstream?')) {
-      chromecastUrl = chromecastUrl.replace('/getstream?', '/manifest.m3u8?');
-    }
-
-    if (!chromecastUrl.startsWith('https://acestream.walerike.com')) {
-      const url = new URL(chromecastUrl.startsWith('http') ? chromecastUrl : 'https://dummy.com' + chromecastUrl);
-      const id = url.searchParams.get('id');
-
-      if (id) {
-        chromecastUrl = `https://acestream.walerike.com/ace/manifest.m3u8?id=${id}`;
-      } else {
-        throw new Error('URL de stream inválida');
-      }
-    }
-
-    if (chromecastUrl.includes('localhost') || chromecastUrl.includes('127.0.0.1')) {
-      throw new Error('No se pueden transmitir URLs locales a Chromecast');
-    }
-
-    if (!chromecastUrl.startsWith('https://')) {
-      throw new Error('Chromecast requiere URLs HTTPS');
-    }
-
-    const currentState = this.chromecastService.getCurrentState();
-    if (!currentState.isConnected) {
-      throw new Error('La conexión con Chromecast se perdió');
-    }
-
-    const videoEl = this.videoElement?.nativeElement;
-    if (videoEl && !videoEl.paused) {
-      videoEl.pause();
-    }
-
-    await this.chromecastService.loadMedia(chromecastUrl, this.eventTitle);
-  }
-
-  stopCasting() {
-    this.chromecastService.endSession();
-
-    const videoEl = this.videoElement?.nativeElement;
-    if (videoEl?.paused) {
-      videoEl.play().catch(() => {});
-    }
-  }
-
-  toggleCastPlayPause() {
-    if (!this.castState.isConnected) return;
-    this.chromecastService.togglePlayPause();
-  }
 }
