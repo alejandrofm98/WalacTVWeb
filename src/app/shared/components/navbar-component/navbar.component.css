@@ -204,8 +204,9 @@ a[routerLink="/channels"].active-link,
 
   .logout-btn {
     padding: 10px 16px;
-    font-size: 14px;
-    min-height: 44px;
+    font-size: 13px;
+    gap: 6px;
+    min-height: 42px;
   }
 
   .logout-btn svg {
@@ -268,25 +269,16 @@ a[routerLink="/channels"].active-link,
     font-size: 16px;
   }
 
-  /* SOLUCIÓN: Mostrar solo el icono en pantallas muy pequeñas */
   .logout-btn {
-    padding: 10px;
-    min-width: 44px;
-    gap: 0;
-  }
-
-  /* Ocultar el TEXTO pero mantener el icono visible */
-  .logout-btn span {
-    width: 20px;
-    height: 20px;
-    font-size: 0;
-    overflow: hidden;
+    padding: 8px 14px;
+    font-size: 13px;
+    gap: 6px;
+    min-height: 40px;
   }
 
   .logout-btn svg {
-    width: 20px;
-    height: 20px;
-    margin: 0;
+    width: 16px;
+    height: 16px;
   }
 
   .main-content,
