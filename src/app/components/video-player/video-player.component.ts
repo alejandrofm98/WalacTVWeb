@@ -13,13 +13,15 @@ import {CommonModule} from '@angular/common';
 import {ActivatedRoute} from '@angular/router';
 import {DataService} from '../../services/data.service';
 import {PlayerStateService} from '../../services/player-state.service';
-import Hls from 'hls.js';
 import {Events} from '../../models';
 import {slugify} from '../../utils/slugify';
 import {NavbarComponent} from '../../shared/components/navbar-component/navbar.component';
 import {environment} from '../../../environments/environment';
 import {Channel} from '../../models/channel.model';
 import {Subscription} from 'rxjs';
+
+import mpegts from 'mpegts.js/dist/mpegts.js';
+
 
 @Component({
   selector: 'app-video-player',
@@ -34,7 +36,7 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
   @Input() eventTitle: string = 'Reproducción en vivo';
   @Input() channel: Channel | null = null;
 
-  private hls?: Hls;
+  private player: any; // 👉 player mpegts
   private shouldInitializePlayer = false;
   private dataService = inject(DataService);
   private playerState = inject(PlayerStateService);
@@ -47,7 +49,6 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
   showControls = true;
   private hideControlsTimeout?: number;
 
-
   eventData?: Events;
   currentOriginalUrl: string = '';
   isChannelMode = false;
@@ -56,7 +57,6 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   ngOnInit() {
-
     this.route.paramMap.subscribe(params => {
       const slug = params.get('title');
       if (!slug) return;
@@ -155,9 +155,9 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   ngOnDestroy() {
-    if (this.hls) {
-      this.hls.destroy();
-      this.hls = undefined;
+    if (this.player) {
+      this.player.destroy();
+      this.player = null;
     }
     if (this.hideControlsTimeout) {
       clearTimeout(this.hideControlsTimeout);
@@ -172,7 +172,6 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
       return this.channel.m3u8 ?? [];
     }
     if (!this.isChannelMode && this.eventData) {
-      // Si el evento tiene varios enlaces, los aplana todos
       return this.eventData.enlaces?.flatMap(e => e.m3u8 ?? []) ?? [];
     }
     return [];
@@ -184,7 +183,6 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
     }
 
     if (!this.isChannelMode && this.eventData?.enlaces?.length) {
-      // Busca el enlace que contiene el stream actual
       const activeLink = this.eventData.enlaces.find(e =>
         e.m3u8?.includes(this.currentOriginalUrl)
       );
@@ -208,45 +206,37 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
     }
   }
 
-  private processStreamUrl(url: string, forChromecast: boolean = false): string {
-    const apiBase = environment.apiWalactv;
-    const acestreamBase = forChromecast ? 'https://acestream.walerike.com' : environment.acestreamHost;
-
+  // 🔥🔥🔥 YA NO DEVUELVE manifest.m3u8 – siempre respetamos la URL
+  private processStreamUrl(url: string): string {
     try {
-      if (url.includes('127.0.0.1:6878') || url.includes('localhost:6878')) {
-        const id = new URL(url).searchParams.get('id');
-        if (id) {
-          return `${acestreamBase}/ace/manifest.m3u8?id=${id}`;
+      // Detectar URLs locales de AceStream
+      if (url.includes("/ace/getstream?id=")) {
+        // Extraer el ID
+        const idMatch = url.match(/id=([a-fA-F0-9]+)/);
+        if (idMatch) {
+          const id = idMatch[1];
+          return `https://acestream.walerike.com/ace/getstream?id=${id}`;
         }
       }
 
-      if (url.includes('acestream.walerike.com') || url.startsWith(acestreamBase)) {
-        return url;
+      // También para URLs con redirect /ace/r/.... → obtener getstream puro
+      const redirectMatch = url.match(/\/ace\/r\/[a-fA-F0-9]+\/([a-fA-F0-9]+)/);
+      if (redirectMatch) {
+        const id = redirectMatch[1];
+        return `https://acestream.walerike.com/ace/getstream?id=${id}`;
       }
 
-      if (url.startsWith('https://walactv.walerike.com/proxy?url=')) {
-        return url.replace('https://walactv.walerike.com', apiBase);
-      }
-
-      if (url.startsWith('/apiwalactv')) {
-        return url.replace('/apiwalactv', apiBase);
-      }
-
-      if (url.startsWith('/apiace')) {
-        return url.replace('/apiace', acestreamBase);
-      }
-
-      if (url.startsWith('http://') || url.startsWith('https://')) {
-        return url;
-      }
-
+      // Cualquier otra URL queda igual
       return url;
+
     } catch (e) {
-      console.error('Error parseando URL:', e);
+      console.error("Error procesando URL:", e);
       return url;
     }
   }
 
+
+  // 🔥🔥🔥 Todo el reproductor se maneja con MPEGTS.JS
   private initializePlayer() {
     const video = this.videoElement?.nativeElement;
     if (!video) return;
@@ -254,126 +244,27 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
     const urlToUse = Array.isArray(this.streamUrl) ? this.streamUrl[0] : this.streamUrl;
     if (!urlToUse) return;
 
-    if (this.hls) {
-      this.hls.destroy();
-      this.hls = undefined;
+    if (this.player) {
+      this.player.destroy();
+      this.player = null;
     }
 
-    if (Hls.isSupported()) {
-      this.hls = new Hls({
-        // Configuración optimizada para estabilidad (más parecido a VLC)
-        debug: false,
-
-        // Buffer más grande = más estable
-        maxBufferLength: 60,              // VLC usa ~30-60s (antes: 30)
-        maxMaxBufferLength: 600,          // Mantener
-        maxBufferSize: 60 * 1000 * 1000,  // Mantener
-        backBufferLength: 30,             // Reducido de 90 para liberar memoria
-
-        // Tolerancia a problemas de red
-        maxBufferHole: 1.0,               // Más tolerante (antes: 0.5)
-        highBufferWatchdogPeriod: 5,      // Más tiempo antes de limpiar buffer (antes: 3)
-
-        // Live streaming optimizado para estabilidad
-        liveSyncDurationCount: 5,         // Más segmentos de sincronización (antes: 3)
-        liveMaxLatencyDurationCount: 10,  // Más latencia permitida (antes: Infinity)
-        liveDurationInfinity: false,      // Desactivar para mejor gestión de buffer
-        liveBackBufferLength: 30,         // Buffer trasero para live
-
-        // Carga y reintentos más agresivos
-        autoStartLoad: true,
-        startPosition: -1,
-
-        // Timeouts más largos
-        manifestLoadingTimeOut: 30000,    // 30s (antes: 20s)
-        manifestLoadingMaxRetry: 15,      // Más reintentos (antes: 10)
-        manifestLoadingRetryDelay: 2000,  // 2s entre reintentos
-
-        levelLoadingTimeOut: 30000,       // 30s (antes: 20s)
-        levelLoadingMaxRetry: 15,         // Más reintentos (antes: 10)
-        levelLoadingRetryDelay: 2000,
-
-        fragLoadingTimeOut: 60000,        // 60s para fragmentos (antes: 40s)
-        fragLoadingMaxRetry: 15,          // Más reintentos (antes: 10)
-        fragLoadingRetryDelay: 2000,      // 2s entre reintentos (antes: 1s)
-
-        // Desactivar modo baja latencia
-        lowLatencyMode: false,
-
-        // Workers para mejor rendimiento
+    if (mpegts.isSupported()) {
+      this.player = mpegts.createPlayer({
+        type: 'mpegts',
+        isLive: true,
+        url: urlToUse,
         enableWorker: true,
-
-        // Configuración de red
-        xhrSetup: (xhr: XMLHttpRequest) => {
-          xhr.timeout = 60000;            // 60s (antes: 40s)
-          xhr.withCredentials = false;
-        },
-
-        // Adaptive Bitrate más conservador
-        abrEwmaDefaultEstimate: 500000,   // Estimación inicial conservadora (500kbps)
-        abrBandWidthFactor: 0.85,         // Factor más conservador (default: 0.95)
-        abrBandWidthUpFactor: 0.7,        // Más lento para subir calidad
-
-        // Prevenir stalls
-        maxFragLookUpTolerance: 0.5,      // Más tolerante buscando fragmentos
-        maxStarvationDelay: 6,            // Más tiempo antes de considerar stalled (6s)
-        maxLoadingDelay: 6,               // Más tiempo de carga permitido
+        liveBufferLatencyChasing: true,
+        lazyLoad: false
       });
 
-      this.hls.attachMedia(video);
-
-      this.hls.on(Hls.Events.MEDIA_ATTACHED, () => {
-        this.hls?.loadSource(urlToUse);
+      this.player.attachMediaElement(video);
+      this.player.load();
+      this.player.play().catch(() => {
+        video.muted = true;
+        this.player!.play();
       });
-
-      this.hls.on(Hls.Events.MANIFEST_PARSED, () => {
-        // Intentar reproducir, si falla activar mute
-        video.play().catch(() => {
-          video.muted = true;
-          return video.play();
-        });
-      });
-
-      // Manejo de errores mejorado
-      this.hls.on(Hls.Events.ERROR, (event, data) => {
-        console.warn('HLS Error:', data.type, data.details, data.fatal);
-
-        if (data.fatal) {
-          switch (data.type) {
-            case Hls.ErrorTypes.NETWORK_ERROR:
-              console.log('Error de red, intentando recuperar...');
-              // Esperar más antes de reintentar
-              setTimeout(() => {
-                if (this.hls) {
-                  this.hls.startLoad();
-                }
-              }, 3000); // 3s (antes: 1s)
-              break;
-
-            case Hls.ErrorTypes.MEDIA_ERROR:
-              console.log('Error de media, intentando recuperar...');
-              this.hls?.recoverMediaError();
-              break;
-
-            default:
-              console.error('Error fatal irrecuperable, reiniciando player...');
-              this.hls?.destroy();
-              // Esperar más antes de reiniciar completamente
-              setTimeout(() => this.initializePlayer(), 5000); // 5s (antes: 2s)
-              break;
-          }
-        }
-      });
-
-      // Logging adicional para debugging (opcional, quitar en producción)
-      this.hls.on(Hls.Events.BUFFER_APPENDED, () => {
-        const buffered = video.buffered;
-      });
-
-    } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-      // Safari nativo
-      video.src = urlToUse;
-      video.addEventListener('loadedmetadata', () => video.play());
     }
 
     video.addEventListener('play', () => {
@@ -390,18 +281,6 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
       this.volume = video.volume;
       this.isMuted = video.muted;
       this.cdr.markForCheck();
-    });
-
-    // Detectar y manejar stalls
-    video.addEventListener('waiting', () => {
-      console.log('Video buffering...');
-    });
-
-    video.addEventListener('stalled', () => {
-      console.warn('Video stalled, intentando recuperar...');
-      if (this.hls) {
-        this.hls.startLoad();
-      }
     });
   }
 
@@ -429,40 +308,26 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
 
   toggleFullscreen() {
     const container = this.videoElement.nativeElement.parentElement;
-
     if (!container) return;
 
     const doc = document as any;
     const elem = container as any;
 
-    // Verificar si estamos en fullscreen
     const isInFullscreen = doc.fullscreenElement ||
       doc.webkitFullscreenElement ||
       doc.mozFullScreenElement ||
       doc.msFullscreenElement;
 
     if (!isInFullscreen) {
-      // Entrar en fullscreen
-      if (elem.requestFullscreen) {
-        elem.requestFullscreen();
-      } else if (elem.webkitRequestFullscreen) {
-        elem.webkitRequestFullscreen();
-      } else if (elem.mozRequestFullScreen) {
-        elem.mozRequestFullScreen();
-      } else if (elem.msRequestFullscreen) {
-        elem.msRequestFullscreen();
-      }
+      if (elem.requestFullscreen) elem.requestFullscreen();
+      else if (elem.webkitRequestFullscreen) elem.webkitRequestFullscreen();
+      else if (elem.mozRequestFullScreen) elem.mozRequestFullScreen();
+      else if (elem.msRequestFullscreen) elem.msRequestFullscreen();
     } else {
-      // Salir de fullscreen
-      if (doc.exitFullscreen) {
-        doc.exitFullscreen();
-      } else if (doc.webkitExitFullscreen) {
-        doc.webkitExitFullscreen();
-      } else if (doc.mozCancelFullScreen) {
-        doc.mozCancelFullScreen();
-      } else if (doc.msExitFullscreen) {
-        doc.msExitFullscreen();
-      }
+      if (doc.exitFullscreen) doc.exitFullscreen();
+      else if (doc.webkitExitFullscreen) doc.webkitExitFullscreen();
+      else if (doc.mozCancelFullScreen) doc.mozCancelFullScreen();
+      else if (doc.msExitFullscreen) doc.msExitFullscreen();
     }
   }
 
@@ -497,6 +362,5 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
       this.initializePlayer();
     }
   }
-
-
 }
+
