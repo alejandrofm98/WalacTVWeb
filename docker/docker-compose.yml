@@ -18,8 +18,7 @@ services:
     ports:
       - "8080:8080"
     restart: unless-stopped
-    networks:
-      - walactv-network
+
 
 #  angular-dev:
 #    build:
@@ -44,5 +43,5 @@ services:
 #      - walactv-network
 
 networks:
-  walactv-network:
+  dokploy-network:
     external: true
