@@ -11,18 +11,58 @@
   justify-content: center;
 }
 
+/* Header con información del canal */
+.header-info {
+  width: 100%;
+  max-width: 1400px;
+  padding: 40px 24px 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.channel-badges {
+  display: flex;
+  align-items: center;
+}
+
+.channel-number-badge {
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  color: #ffffff;
+  font-size: 24px;
+  font-weight: 700;
+  padding: 12px 20px;
+  border-radius: 12px;
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
+  letter-spacing: 0.5px;
+  min-width: 60px;
+  text-align: center;
+}
+
 .event-title {
   font-size: 32px;
   font-weight: 700;
   color: #ffffff;
-  margin: 0 0 24px 0;
-  padding: 40px 24px 0;
+  margin: 0;
   text-align: center;
   text-transform: uppercase;
   text-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
   letter-spacing: -0.5px;
-  width: 100%;
-  max-width: 1400px;
+  flex: 1;
+}
+
+.channel-group-badge {
+  background: rgba(15, 23, 42, 0.8);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 14px;
+  font-weight: 600;
+  padding: 10px 18px;
+  border-radius: 20px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
 }
 
 .video-container {
@@ -321,8 +361,266 @@
   display: none !important;
 }
 
+/* Navegación de canales */
+.channel-navigation {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+  z-index: 10;
+}
+
+.nav-arrow {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 60px;
+  height: 60px;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(10px);
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  border-radius: 50%;
+  color: #ffffff;
+  font-size: 24px;
+  cursor: pointer;
+  pointer-events: auto;
+  transition: all 0.3s ease;
+  opacity: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 11;
+  user-select: none;
+}
+
+.nav-arrow:hover {
+  background: rgba(59, 130, 246, 0.9);
+  border-color: rgba(59, 130, 246, 0.6);
+  transform: translateY(-50%) scale(1.1);
+  box-shadow: 0 4px 20px rgba(59, 130, 246, 0.5);
+}
+
+.nav-arrow:active {
+  transform: translateY(-50%) scale(0.95);
+}
+
+.nav-arrow.show-controls {
+  opacity: 1;
+}
+
+.nav-arrow-left {
+  left: 20px;
+}
+
+.nav-arrow-right {
+  right: 20px;
+}
+
+/* Animación al cambiar de canal */
+@keyframes channelChange {
+  0% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+.video-container.changing-channel {
+  animation: channelChange 0.5s ease;
+}
+
+/* Overlay de cambio de canal */
+.channel-overlay {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) scale(0.8);
+  background: rgba(0, 0, 0, 0.95);
+  backdrop-filter: blur(20px);
+  border-radius: 20px;
+  padding: 40px 60px;
+  z-index: 100;
+  opacity: 0;
+  pointer-events: none;
+  transition: all 0.3s ease;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.8);
+  border: 2px solid rgba(59, 130, 246, 0.3);
+}
+
+.channel-overlay.visible {
+  opacity: 1;
+  transform: translate(-50%, -50%) scale(1);
+}
+
+.channel-overlay-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  text-align: center;
+}
+
+.channel-overlay-number {
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  color: #ffffff;
+  font-size: 32px;
+  font-weight: 700;
+  padding: 12px 24px;
+  border-radius: 12px;
+  box-shadow: 0 4px 16px rgba(59, 130, 246, 0.5);
+  letter-spacing: 1px;
+  min-width: 70px;
+  text-align: center;
+}
+
+.channel-overlay-icon {
+  font-size: 64px;
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.1);
+    opacity: 0.8;
+  }
+}
+
+.channel-overlay-name {
+  font-size: 32px;
+  font-weight: 700;
+  color: #ffffff;
+  letter-spacing: -0.5px;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+  max-width: 600px;
+  word-wrap: break-word;
+}
+
+.channel-overlay-group {
+  font-size: 18px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.7);
+  background: rgba(59, 130, 246, 0.2);
+  padding: 8px 20px;
+  border-radius: 20px;
+  border: 1px solid rgba(59, 130, 246, 0.3);
+}
+
+/* Asegurar que el overlay se vea en fullscreen */
+.video-container:fullscreen .channel-overlay,
+.video-container:-webkit-full-screen .channel-overlay,
+.video-container:-moz-full-screen .channel-overlay,
+.video-container:-ms-fullscreen .channel-overlay {
+  z-index: 999999;
+}
+
+/* Indicadores de swipe para móviles en fullscreen */
+.swipe-indicator {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+  z-index: 5;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  display: none;
+}
+
+.swipe-indicator.show-controls {
+  opacity: 1;
+}
+
+.swipe-hint {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 16px;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(10px);
+  border-radius: 12px;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.swipe-hint-left {
+  left: 20px;
+  flex-direction: row;
+}
+
+.swipe-hint-right {
+  right: 20px;
+  flex-direction: row-reverse;
+}
+
+.swipe-arrow {
+  font-size: 24px;
+  color: #3b82f6;
+}
+
+.swipe-text {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* Mostrar indicadores solo en móviles y en fullscreen */
+@media (max-width: 768px) {
+  .video-container:fullscreen .swipe-indicator,
+  .video-container:-webkit-full-screen .swipe-indicator,
+  .video-container:-moz-full-screen .swipe-indicator,
+  .video-container:-ms-fullscreen .swipe-indicator {
+    display: block;
+  }
+}
+
+/* Animación de hint */
+@keyframes swipeHint {
+  0%, 100% {
+    transform: translateX(0);
+  }
+  50% {
+    transform: translateX(-5px);
+  }
+}
+
+@keyframes swipeHintRight {
+  0%, 100% {
+    transform: translateX(0);
+  }
+  50% {
+    transform: translateX(5px);
+  }
+}
+
+.swipe-hint-left .swipe-arrow {
+  animation: swipeHint 2s ease-in-out infinite;
+}
+
+.swipe-hint-right .swipe-arrow {
+  animation: swipeHintRight 2s ease-in-out infinite;
+}
+
 /* Responsive */
 @media (max-width: 1024px) {
+  .header-info {
+    padding: 32px 16px 0;
+  }
+
   .event-title {
     font-size: 28px;
   }
@@ -337,9 +635,28 @@
 }
 
 @media (max-width: 768px) {
+  .header-info {
+    padding: 24px 16px 0;
+    gap: 12px;
+  }
+
+  .channel-badges {
+    gap: 10px;
+  }
+
+  .channel-number-badge {
+    font-size: 20px;
+    padding: 10px 16px;
+    min-width: 50px;
+  }
+
   .event-title {
     font-size: 24px;
-    padding: 24px 16px 0;
+  }
+
+  .channel-group-badge {
+    font-size: 12px;
+    padding: 8px 14px;
   }
 
   .video-container {
@@ -375,12 +692,69 @@
     padding: 9px 18px;
     font-size: 13px;
   }
+
+  .nav-arrow {
+    width: 50px;
+    height: 50px;
+    font-size: 20px;
+  }
+
+  .nav-arrow-left {
+    left: 15px;
+  }
+
+  .nav-arrow-right {
+    right: 15px;
+  }
+
+  .channel-overlay {
+    padding: 30px 40px;
+  }
+
+  .channel-overlay-number {
+    font-size: 28px;
+    padding: 10px 20px;
+    min-width: 60px;
+  }
+
+  .channel-overlay-icon {
+    font-size: 48px;
+  }
+
+  .channel-overlay-name {
+    font-size: 24px;
+    max-width: 400px;
+  }
+
+  .channel-overlay-group {
+    font-size: 16px;
+    padding: 6px 16px;
+  }
 }
 
 @media (max-width: 480px) {
+  .header-info {
+    padding: 16px 12px 0;
+    gap: 10px;
+  }
+
+  .channel-badges {
+    gap: 8px;
+  }
+
+  .channel-number-badge {
+    font-size: 18px;
+    padding: 8px 14px;
+    min-width: 45px;
+  }
+
   .event-title {
     font-size: 18px;
-    padding: 16px 12px 0;
+  }
+
+  .channel-group-badge {
+    font-size: 11px;
+    padding: 6px 12px;
   }
 
   .video-container {
@@ -428,5 +802,64 @@
 
   .channel-options {
     padding: 16px 8px;
+  }
+
+  .nav-arrow {
+    width: 45px;
+    height: 45px;
+    font-size: 18px;
+  }
+
+  .nav-arrow-left {
+    left: 10px;
+  }
+
+  .nav-arrow-right {
+    right: 10px;
+  }
+
+  .swipe-hint {
+    padding: 12px;
+  }
+
+  .swipe-hint-left {
+    left: 10px;
+  }
+
+  .swipe-hint-right {
+    right: 10px;
+  }
+
+  .swipe-arrow {
+    font-size: 20px;
+  }
+
+  .swipe-text {
+    font-size: 10px;
+  }
+
+  .channel-overlay {
+    padding: 24px 32px;
+    max-width: 90%;
+  }
+
+  .channel-overlay-number {
+    font-size: 24px;
+    padding: 8px 16px;
+    min-width: 50px;
+  }
+
+  .channel-overlay-icon {
+    font-size: 40px;
+  }
+
+  .channel-overlay-name {
+    font-size: 20px;
+    max-width: 280px;
+  }
+
+  .channel-overlay-group {
+    font-size: 14px;
+    padding: 5px 12px;
   }
 }

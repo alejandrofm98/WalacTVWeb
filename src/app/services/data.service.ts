@@ -25,9 +25,9 @@ export class DataService {
    */
   private async fetchChannels(): Promise<any> {
     try {
-      console.log('📺 Buscando canales en canales_2.0...');
+      console.log('📺 Buscando canales en canales_iptv...');
 
-      const docRef = doc(this.firestore, 'canales', 'canales_2.0');
+      const docRef = doc(this.firestore, 'canales', 'canales_iptv');
       const docSnap = await getDoc(docRef);
 
       if (docSnap.exists()) {
@@ -35,7 +35,7 @@ export class DataService {
         console.log('✅ Canales encontrados:', data);
         return data;
       } else {
-        console.log('❌ Documento canales_2.0 no existe');
+        console.log('❌ Documento canales_iptv no existe');
         return null;
       }
     } catch (error) {

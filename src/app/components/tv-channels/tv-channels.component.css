@@ -224,4 +224,318 @@ h1 {
   .no-results p {
     font-size: 16px;
   }
+
+}
+
+/* Añadir al final del archivo CSS existente */
+
+/* Wrapper para todos los grupos */
+.groups-wrapper {
+  width: 100%;
+  max-width: 1400px;
+  padding: 0 24px 32px;
+  box-sizing: border-box;
+}
+
+/* Grupo de canales */
+.channel-group {
+  margin-bottom: 48px;
+}
+
+.channel-group:last-child {
+  margin-bottom: 0;
+}
+
+/* Header del grupo */
+.group-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 24px;
+  padding: 16px 20px;
+  background: rgba(15, 23, 42, 0.6);
+  backdrop-filter: blur(10px);
+  border-radius: 12px;
+  border-left: 4px solid #3b82f6;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.group-title {
+  font-size: 20px;
+  font-weight: 600;
+  color: #ffffff;
+  margin: 0;
+  letter-spacing: -0.3px;
+  text-transform: uppercase;
+}
+
+.group-count {
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.6);
+  background: rgba(59, 130, 246, 0.15);
+  padding: 6px 12px;
+  border-radius: 20px;
+  font-weight: 500;
+}
+
+/* Ajustar el grid dentro de cada grupo */
+.channel-group .channels-grid {
+  padding: 0;
+}
+
+/* Responsive para grupos */
+@media (max-width: 768px) {
+  .groups-wrapper {
+    padding: 0 16px 24px;
+  }
+
+  .channel-group {
+    margin-bottom: 36px;
+  }
+
+  .group-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 12px 16px;
+  }
+
+  .group-title {
+    font-size: 18px;
+  }
+
+  .group-count {
+    font-size: 13px;
+    padding: 4px 10px;
+  }
+}
+
+@media (max-width: 480px) {
+  .groups-wrapper {
+    padding: 0 12px 16px;
+  }
+
+  .channel-group {
+    margin-bottom: 28px;
+  }
+
+  .group-header {
+    padding: 10px 12px;
+    margin-bottom: 16px;
+  }
+
+  .group-title {
+    font-size: 16px;
+  }
+
+  .group-count {
+    font-size: 12px;
+  }
+}
+
+/* Header del grupo - añadir cursor pointer */
+.group-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 24px;
+  padding: 16px 20px;
+  background: rgba(15, 23, 42, 0.6);
+  backdrop-filter: blur(10px);
+  border-radius: 12px;
+  border-left: 4px solid #3b82f6;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  cursor: pointer;
+  transition: all 0.3s ease;
+  user-select: none;
+}
+
+.group-header:hover {
+  background: rgba(15, 23, 42, 0.8);
+  border-left-color: #60a5fa;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+}
+
+.group-info {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.toggle-icon {
+  font-size: 16px;
+  color: rgba(255, 255, 255, 0.6);
+  transition: transform 0.3s ease, color 0.3s ease;
+  min-width: 20px;
+  text-align: center;
+}
+
+.toggle-icon.expanded {
+  transform: rotate(0deg);
+}
+
+.group-header:hover .toggle-icon {
+  color: #60a5fa;
+}
+
+/* Animación para colapsar/expandir */
+.channels-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 24px;
+  padding: 0;
+  max-height: 10000px;
+  overflow: hidden;
+  transition: max-height 0.4s ease, opacity 0.3s ease, margin 0.3s ease;
+  opacity: 1;
+  margin-bottom: 0;
+}
+
+.channels-grid.collapsed {
+  max-height: 0;
+  opacity: 0;
+  margin-bottom: -24px;
+}
+
+/* Responsive para el toggle */
+@media (max-width: 768px) {
+  .group-header {
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 16px;
+  }
+
+  .group-info {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+    flex: 1;
+  }
+
+  .toggle-icon {
+    font-size: 14px;
+  }
+}
+
+@media (max-width: 480px) {
+  .group-header {
+    padding: 10px 12px;
+  }
+
+  .group-info {
+    gap: 6px;
+  }
+
+  .toggle-icon {
+    font-size: 12px;
+    min-width: 16px;
+  }
+}
+
+/* Número de canal - añadir después del .channel-card */
+.channel-number {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  background: rgba(59, 130, 246, 0.9);
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: 6px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  z-index: 1;
+}
+
+/* Ajustar el card para posición relativa */
+.channel-card {
+  position: relative;
+  background: rgba(15, 23, 42, 0.6);
+  backdrop-filter: blur(10px);
+  border-radius: 12px;
+  padding: 24px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+  cursor: pointer;
+  transition: all 0.3s ease;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  height: 100%;
+}
+
+@media (max-width: 480px) {
+  .channel-number {
+    font-size: 12px;
+    padding: 3px 8px;
+    top: 6px;
+    right: 6px;
+  }
+}
+
+/* Modificar o añadir estas reglas para el número de canal */
+
+.channel-card {
+  position: relative;
+  background: rgba(15, 23, 42, 0.6);
+  backdrop-filter: blur(10px);
+  border-radius: 12px;
+  padding: 24px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+  cursor: pointer;
+  transition: all 0.3s ease;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  height: 100%;
+  overflow: hidden;
+}
+
+.channel-number {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 700;
+  padding: 6px 12px;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.4);
+  z-index: 2;
+  letter-spacing: 0.5px;
+  min-width: 32px;
+  text-align: center;
+}
+
+.channel-content {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+
+/* Responsive para el número */
+@media (max-width: 768px) {
+  .channel-number {
+    font-size: 12px;
+    padding: 5px 10px;
+    top: 10px;
+    right: 10px;
+  }
+}
+
+@media (max-width: 480px) {
+  .channel-number {
+    font-size: 11px;
+    padding: 4px 8px;
+    top: 8px;
+    right: 8px;
+    min-width: 28px;
+  }
 }

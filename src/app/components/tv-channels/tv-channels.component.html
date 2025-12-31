@@ -15,21 +15,37 @@
     </div>
   </div>
 
-  <div class="channels-grid">
-    <div
-      *ngFor="let channel of filteredChannels"
-      class="channel-card"
-      (click)="onChannelClick(channel)">
-      <div class="channel-logo">
-        <img [src]="channel.logo" [alt]="channel.canal" />
+  <!-- Grupos de canales -->
+  <div class="groups-wrapper">
+    <div *ngFor="let group of groupedChannels" class="channel-group">
+      <div class="group-header" (click)="toggleGroup(group)">
+        <div class="group-info">
+          <h2 class="group-title">{{ group.grupo }}</h2>
+          <span class="group-count">{{ group.channels.length }} canales</span>
+        </div>
+        <span class="toggle-icon" [class.expanded]="group.expanded">
+          {{ group.expanded ? '▼' : '▶' }}
+        </span>
       </div>
-      <div class="channel-name">
-        {{ channel.canal }}
+
+      <div class="channels-grid" [class.collapsed]="!group.expanded">
+        <div
+          *ngFor="let channel of group.channels"
+          class="channel-card"
+          (click)="onChannelClick(channel)">
+          <div class="channel-number">{{ channel.numero }}</div>
+          <div class="channel-logo">
+            <img [src]="channel.logo" [alt]="channel.nombre" />
+          </div>
+          <div class="channel-name">
+            {{ channel.nombre }}
+          </div>
+        </div>
       </div>
     </div>
   </div>
 
-  <div *ngIf="filteredChannels.length === 0" class="no-results">
+  <div *ngIf="totalChannels === 0" class="no-results">
     <p>No se encontraron canales</p>
   </div>
 </div>

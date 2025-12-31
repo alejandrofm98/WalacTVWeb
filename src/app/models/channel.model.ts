@@ -1,5 +1,7 @@
 export interface Channel {
-  canal: string;
+  numero: number;
+  grupo: string;
   logo: string;
-  m3u8: string [];
+  url: string;
+  nombre: string;
 }

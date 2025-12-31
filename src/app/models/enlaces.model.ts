@@ -1,5 +1,7 @@
+import {Calidad} from './calidad.model';
+
 export interface Enlaces{
  canal: string;
  link: string;
- m3u8: string[];
+  calidades: Calidad[];
 }
