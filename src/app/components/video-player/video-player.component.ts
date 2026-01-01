@@ -22,9 +22,6 @@ import {Subscription} from 'rxjs';
 
 import mpegts from 'mpegts.js/dist/mpegts.js';
 
-// Nota: Asegúrate de que la interfaz 'Events' en tu modelo coincida o soporte la nueva estructura anidada.
-// Si no, TypeScript podría dar errores de compilación si 'enlaces' está tipado como el formato antiguo.
-
 @Component({
   selector: 'app-video-player',
   standalone: true,
@@ -263,10 +260,6 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
       next: (data) => {
         if (!data?.eventos) return;
 
-        // Asumiendo que 'eventos' es un array directo de objetos de evento
-        // (incluso si el backend los envuelve en 'dia', la lógica de búsqueda debería ser
-        // capaz de aplanarlos o buscar en la estructura correcta).
-        // Aquí buscamos en el array raíz de eventos.
         const foundEvent = data.eventos.find((e: Events) =>
           slugify(e.titulo) === slug
         );
@@ -285,8 +278,11 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
   private loadStreamFromChannel() {
     if (!this.channel?.url) return;
 
-    this.streamUrl = this.channel.url;
-    this.currentOriginalUrl = this.channel.url;
+    // Lógica para Canales: SIEMPRE aplicamos el proxy
+    const finalUrl = this.getProxiedUrl(this.channel.url, true);
+
+    this.streamUrl = finalUrl;
+    this.currentOriginalUrl = finalUrl;
     this.shouldInitializePlayer = true;
 
     if (this.videoElement) {
@@ -324,14 +320,61 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
     }
   }
 
-  // --- MODIFICADO PARA NUEVA ESTRUCTURA DE EVENTOS ---
-  get availableStreams(): string[] {
-    // Canales: Lógica sin cambios
-    if (this.isChannelMode && this.channel?.url) {
-      return [this.channel.url];
+  // --- NUEVOS MÉTODOS DE AYUDA ---
+
+  /**
+   * Determina si un enlace de evento es Acestream y necesita proxy.
+   * Ajusta las condiciones según tus necesidades.
+   */
+  private isAcestreamLink(url: string): boolean {
+    if (!url) return false;
+    const lowerUrl = url.toLowerCase();
+    // Ejemplos de condiciones:
+    // 1. Contiene 'ace' (ej: acestream)
+    // 2. Es el dominio específico mencionado anteriormente
+    return lowerUrl.includes('ace') || lowerUrl.includes('line.ultra-8k.xyz');
+  }
+
+  /**
+   * Devuelve la URL transformada con el proxy si es necesario.
+   * @param url La URL original
+   * @param forceProxy Si es true (Canales), fuerza el proxy siempre.
+   */
+  private getProxiedUrl(url: string, forceProxy: boolean = false): string {
+    if (!url) return '';
+
+    // Si es Canal, forzar proxy SIEMPRE
+    if (forceProxy) {
+      return this.applyProxyTransform(url);
     }
 
-    // Eventos: Nueva lógica para enlaces -> calidades -> m3u8
+    // Si es Evento, solo aplicar si es Acestream
+    if (this.isAcestreamLink(url)) {
+      return this.applyProxyTransform(url);
+    }
+
+    // En cualquier otro caso, devolver la URL original
+    return url;
+  }
+
+  /**
+   * Realiza la transformación física de la cadena de texto.
+   */
+  private applyProxyTransform(url: string): string {
+    // Eliminar el protocolo inicial (http:// o https://)
+    const cleanUrl = url.replace(/^https?:\/\//, '');
+    // Anteponer la URL del proxy
+    return `https://iptv.walerike.com/stream-proxy/${cleanUrl}`;
+  }
+
+  // --- MODIFICADO: Lógica de Streams disponible ---
+  get availableStreams(): string[] {
+    // Canales: Devolvemos SIEMPRE la URL con proxy
+    if (this.isChannelMode && this.channel?.url) {
+      return [this.getProxiedUrl(this.channel.url, true)];
+    }
+
+    // Eventos: Devolvemos la URL solo si es acestream, si no, la original
     if (!this.isChannelMode && this.eventData?.enlaces) {
       const streams: string[] = [];
 
@@ -339,18 +382,17 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
         // Verificamos si tiene calidades
         if (enlace.calidades && Array.isArray(enlace.calidades)) {
           enlace.calidades.forEach(calidad => {
-            // Verificamos si tiene m3u8
             if (calidad.m3u8) {
-              streams.push(calidad.m3u8);
+              streams.push(this.getProxiedUrl(calidad.m3u8, false));
             }
           });
         } else if ((enlace as any).m3u8) {
-          // Fallback por si acaso algunos datos viejos aún existen
+          // Fallback estructura antigua
           const oldM3u8 = (enlace as any).m3u8;
           if (Array.isArray(oldM3u8)) {
-            streams.push(...oldM3u8);
+            oldM3u8.forEach(u => streams.push(this.getProxiedUrl(u, false)));
           } else {
-            streams.push(oldM3u8);
+            streams.push(this.getProxiedUrl(oldM3u8, false));
           }
         }
       });
@@ -366,17 +408,30 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
     }
 
     if (!this.isChannelMode && this.eventData?.enlaces?.length) {
-      // Intentamos encontrar el título del canal basado en la URL actual para mostrar qué enlace está activo
-      // Recorremos la nueva estructura
+      // Necesitamos normalizar las URLs para comparar, quitando proxy y protocolos
+      const normalizeUrl = (url: string) => {
+        if (!url) return '';
+        // Quitamos el prefijo del proxy si existe para comparar con la data cruda
+        let clean = url.replace('iptv.walerike.com/stream-proxy/', '');
+        // Quitamos protocolos
+        clean = clean.replace(/^https?:\/\//, '');
+        return clean;
+      };
+
+      const currentNormalized = normalizeUrl(this.currentOriginalUrl);
+
       for (const enlace of this.eventData.enlaces) {
-        // Buscamos en calidades
         if (enlace.calidades) {
-           const foundInCalidad = enlace.calidades.find(c => c.m3u8 === this.currentOriginalUrl);
+           const foundInCalidad = enlace.calidades.find(c => normalizeUrl(c.m3u8) === currentNormalized);
            if (foundInCalidad) return enlace.canal || 'Stream';
         }
         // Fallback estructura antigua
-        if ((enlace as any).m3u8?.includes(this.currentOriginalUrl)) {
-           return enlace.canal || 'Stream';
+        if ((enlace as any).m3u8) {
+           const oldM3u8 = (enlace as any).m3u8;
+           const oldLinks = Array.isArray(oldM3u8) ? oldM3u8 : [oldM3u8];
+           if (oldLinks.some(l => normalizeUrl(l) === currentNormalized)) {
+             return enlace.canal || 'Stream';
+           }
         }
       }
       return this.eventData.enlaces[0].canal || 'Stream';
@@ -385,20 +440,20 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
     return 'Stream';
   }
 
-  // --- MODIFICADO PARA NUEVA ESTRUCTURA DE EVENTOS ---
+  // --- MODIFICADO: Carga inicial de stream para eventos ---
   private loadStreamFromEvent() {
-    // Intentamos obtener el primer enlace disponible en la nueva estructura
     if (!this.eventData?.enlaces || this.eventData.enlaces.length === 0) return;
 
-    // Obtenemos el primer enlace
     const firstLink = this.eventData.enlaces[0];
 
-    // Verificamos si tiene calidades (Nueva estructura)
     if (firstLink.calidades && firstLink.calidades.length > 0) {
       const firstQualityUrl = firstLink.calidades[0].m3u8;
       if (firstQualityUrl) {
-        this.currentOriginalUrl = firstQualityUrl;
-        this.streamUrl = firstQualityUrl;
+        // Usamos getProxiedUrl que detectará si es acestream o no
+        const finalUrl = this.getProxiedUrl(firstQualityUrl, false);
+
+        this.currentOriginalUrl = finalUrl;
+        this.streamUrl = finalUrl;
         this.shouldInitializePlayer = true;
         this.cdr.detectChanges();
 
@@ -409,13 +464,14 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
       }
     }
 
-    // Fallback por si el primer enlace no tiene calidades definidas o es estructura antigua
-    // Esto es solo un safety net
+    // Fallback estructura antigua
     const fallbackUrl = (firstLink as any).m3u8;
     if (fallbackUrl) {
         const urlToUse = Array.isArray(fallbackUrl) ? fallbackUrl[0] : fallbackUrl;
-        this.currentOriginalUrl = urlToUse;
-        this.streamUrl = urlToUse;
+        const finalUrl = this.getProxiedUrl(urlToUse, false);
+
+        this.currentOriginalUrl = finalUrl;
+        this.streamUrl = finalUrl;
         this.shouldInitializePlayer = true;
         this.cdr.detectChanges();
         if (this.videoElement) {
@@ -543,18 +599,18 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   changeStream(stream: string) {
+    // stream ya viene procesado desde availableStreams
     this.currentOriginalUrl = stream;
     this.streamUrl = stream;
     this.initializePlayer();
   }
 
-  // Mantenido para compatibilidad, aunque en canales ahora es simple
+  // Cambio de stream dentro de un evento (diferentes enlaces/calidades)
   changeChannelStream(index: number) {
     if (!this.isChannelMode && this.eventData?.enlaces?.[index]) {
       const targetLink = this.eventData.enlaces[index];
       let newUrl = '';
 
-      // Lógica adaptada para nueva estructura
       if (targetLink.calidades && targetLink.calidades.length > 0) {
         newUrl = targetLink.calidades[0].m3u8;
       } else if ((targetLink as any).m3u8) {
@@ -563,8 +619,10 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
       }
 
       if (newUrl) {
-        this.streamUrl = newUrl;
-        this.currentOriginalUrl = newUrl;
+        // Aplicamos la lógica de proxy condicional para eventos
+        const finalUrl = this.getProxiedUrl(newUrl, false);
+        this.streamUrl = finalUrl;
+        this.currentOriginalUrl = finalUrl;
         this.initializePlayer();
       }
     }
