@@ -37,7 +37,8 @@
     </div>
 
     <!-- Indicador de swipe para móviles en fullscreen -->
-    <div class="swipe-indicator" *ngIf="isChannelMode && isFullscreen" [class.show-controls]="showControls">
+    <div class="swipe-indicator" *ngIf="isChannelMode && isFullscreen"
+         [class.show-controls]="showControls">
       <div class="swipe-hint swipe-hint-left">
         <span class="swipe-arrow">◀</span>
         <span class="swipe-text">Desliza</span>
@@ -121,7 +122,7 @@
         <button
           *ngFor="let calidad of enlace.calidades"
           class="option-button"
-          [class.active]="calidad.m3u8 === currentOriginalUrl"
+          [class.active]="isStreamActive(calidad.m3u8)"
           (click)="changeStream(calidad.m3u8)">
           {{ calidad.calidad }}
         </button>
