@@ -96,7 +96,18 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
       doc.mozFullScreenElement ||
       doc.msFullscreenElement
     );
+
+    // Si salimos de fullscreen, desbloqueamos la orientación
+    if (!this.isFullscreen) {
+      this.unlockOrientation();
+    }
+
     this.cdr.markForCheck();
+  }
+
+  @HostListener('window:orientationchange', ['$event'])
+  onOrientationChange(event: any) {
+    console.log('Orientación cambiada:', event.target.screen.orientation.type);
   }
 
   onTouchStart(event: TouchEvent): void {
@@ -317,6 +328,8 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
     if (this.castSubscription) {
       this.castSubscription.unsubscribe();
     }
+    // Desbloquear orientación al destruir el componente
+    this.unlockOrientation();
   }
 
   // =========================
@@ -577,16 +590,64 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
       doc.msFullscreenElement;
 
     if (!isInFullscreen) {
+      // Primero solicitamos fullscreen
       if (elem.requestFullscreen) elem.requestFullscreen();
       else if (elem.webkitRequestFullscreen) elem.webkitRequestFullscreen();
       else if (elem.mozRequestFullScreen) elem.mozRequestFullScreen();
       else if (elem.msRequestFullscreen) elem.msRequestFullscreen();
+
+      // Después intentamos bloquear la orientación a landscape
+      this.lockToLandscape();
     } else {
+      // Primero desbloqueamos la orientación
+      this.unlockOrientation();
+
       if (doc.exitFullscreen) doc.exitFullscreen();
       else if (doc.webkitExitFullscreen) doc.webkitExitFullscreen();
       else if (doc.mozCancelFullScreen) doc.mozCancelFullScreen();
       else if (doc.msExitFullscreen) doc.msExitFullscreen();
     }
+  }
+
+  /**
+   * Bloquea la orientación de la pantalla en modo landscape (horizontal)
+   * Requiere HTTPS y debe llamarse desde un gesto del usuario
+   */
+  private lockToLandscape(): void {
+    // Verificar si la API de Screen Orientation está disponible
+    if (this.isOrientationLockSupported()) {
+      const screenOrientation = (screen as any).orientation;
+
+      screenOrientation.lock('landscape')
+        .then(() => {
+          console.log('✅ Pantalla bloqueada en orientación horizontal');
+        })
+        .catch((error: any) => {
+          console.log('⚠️ No se pudo bloquear la orientación:', error);
+          // Esto es normal en algunos navegadores, muchos ya rotan automáticamente
+        });
+    }
+  }
+
+  /**
+   * Desbloquea la orientación de la pantalla
+   */
+  private unlockOrientation(): void {
+    if (this.isOrientationLockSupported()) {
+      (screen as any).orientation.unlock();
+      console.log('✅ Orientación desbloqueada');
+    }
+  }
+
+  /**
+   * Verifica si la API de Screen Orientation está disponible
+   */
+  private isOrientationLockSupported(): boolean {
+    return !!(
+      typeof screen !== 'undefined' &&
+      (screen as any).orientation &&
+      typeof (screen as any).orientation.lock === 'function'
+    );
   }
 
   onMouseMove() {
