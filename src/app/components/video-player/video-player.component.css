@@ -320,7 +320,7 @@
 }
 
 /* =========================================
-   ESTILOS PARA FULLSCREEN (SIMPLIFICADO)
+   ESTILOS PARA FULLSCREEN (CORREGIDO)
    ========================================= */
 
 /* Resetear body y html en fullscreen */
@@ -334,7 +334,7 @@ html:-webkit-full-screen {
   background: #000;
 }
 
-/* Contenedor en fullscreen - Simplificado */
+/* Contenedor en fullscreen */
 .video-container:fullscreen,
 .video-container:-webkit-full-screen,
 .video-container:-moz-full-screen,
@@ -347,6 +347,9 @@ html:-webkit-full-screen {
   padding: 0;
   border-radius: 0;
   background: #000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 /* Video en fullscreen - SIN transforms ni positions complicadas */
@@ -356,9 +359,11 @@ html:-webkit-full-screen {
 .video-container:-ms-fullscreen .video-element {
   width: 100%;
   height: 100%;
-  object-fit: cover;
-  aspect-ratio: unset;
+  object-fit: cover; /* Cover elimina las franjas llenando el espacio */
+  aspect-ratio: unset; /* Importante: liberar la relación de aspecto 16:9 */
   min-height: unset;
+  position: relative;
+  z-index: 1;
 }
 
 /* Ajuste específico para móviles */
@@ -369,7 +374,7 @@ html:-webkit-full-screen {
   .video-container:-ms-fullscreen .video-element {
     width: 100vw;
     height: 100vh;
-    object-fit: fill;
+    object-fit: cover !important; /* Forzamos cover para quitar franjas verticales */
   }
 }
 
