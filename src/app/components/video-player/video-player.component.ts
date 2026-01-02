@@ -101,13 +101,6 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
     if (!this.isFullscreen) {
       this.unlockOrientation();
       this.showNavbar();
-      // Resetear estilos al salir de fullscreen
-      const video = this.videoElement?.nativeElement;
-      if(video) {
-        video.style.width = '';
-        video.style.height = '';
-        video.style.objectFit = '';
-      }
     }
 
     this.cdr.markForCheck();
@@ -297,6 +290,7 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
   private loadStreamFromChannel() {
     if (!this.channel?.url) return;
 
+    // Canales siempre aplican proxy
     const finalUrl = this.getProxiedUrl(this.channel.url, true);
     this.streamUrl = finalUrl;
     this.currentOriginalUrl = finalUrl;
@@ -335,31 +329,50 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
     if (this.castSubscription) {
       this.castSubscription.unsubscribe();
     }
+    // Desbloquear orientación y mostrar navbar al destruir el componente
     this.unlockOrientation();
     this.showNavbar();
   }
 
   // =========================
-  // HELPERS
+  // MÉTODOS DE AYUDA (HELPERS)
   // =========================
 
+  /**
+   * Normaliza una URL quitando protocolos y prefijos de proxy para poder compararlas.
+   */
   private normalizeUrlForComparison(url: string): string {
     if (!url) return '';
+    // Quitamos el prefijo del proxy si existe
     let clean = url.replace('iptv.walerike.com/stream-proxy/', '');
+    // Quitamos protocolos (http/https)
     clean = clean.replace(/^https?:\/\//, '');
     return clean;
   }
 
+  /**
+   * Determina si un enlace de evento es Acestream.
+   */
   private isAcestreamLink(url: string): boolean {
     if (!url) return false;
     const lowerUrl = url.toLowerCase();
     return lowerUrl.includes('ace') || lowerUrl.includes('line.ultra-8k.xyz');
   }
 
+  /**
+   * Devuelve la URL transformada con el proxy si es necesario.
+   */
   private getProxiedUrl(url: string, forceProxy: boolean = false): string {
     if (!url) return '';
-    if (forceProxy) return this.applyProxyTransform(url);
-    if (this.isAcestreamLink(url)) return this.applyProxyTransform(url);
+
+    if (forceProxy) {
+      return this.applyProxyTransform(url);
+    }
+
+    if (this.isAcestreamLink(url)) {
+      return this.applyProxyTransform(url);
+    }
+
     return url;
   }
 
@@ -368,29 +381,47 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
     return `https://iptv.walerike.com/stream-proxy/${cleanUrl}`;
   }
 
+  // =========================
+  // MÉTODOS PÚBLICOS PARA EL HTML
+  // =========================
+
+  /**
+   * Se usa en el HTML para saber qué botón de calidad resaltar.
+   * Compara la URL "cruda" del botón con la URL "transformada" que se está reproduciendo.
+   */
   isStreamActive(url: string): boolean {
     return this.normalizeUrlForComparison(this.currentOriginalUrl) === this.normalizeUrlForComparison(url);
   }
 
+  /**
+   * Se ejecuta al hacer clic en un botón de calidad.
+   * Recibe la URL cruda desde el HTML, la transforma y cambia el stream.
+   */
   changeStream(url: string) {
+    // Transformamos la URL cruda usando la lógica de proxy
     const finalUrl = this.getProxiedUrl(url, false);
+
     this.currentOriginalUrl = finalUrl;
     this.streamUrl = finalUrl;
     this.initializePlayer();
   }
 
   get availableStreams(): string[] {
+    // Canales: Siempre proxy
     if (this.isChannelMode && this.channel?.url) {
       return [this.getProxiedUrl(this.channel.url, true)];
     }
 
+    // Eventos: Proxy solo si es acestream
     if (!this.isChannelMode && this.eventData?.enlaces) {
       const streams: string[] = [];
 
       this.eventData.enlaces.forEach(enlace => {
         if (enlace.calidades && Array.isArray(enlace.calidades)) {
           enlace.calidades.forEach(calidad => {
-            if (calidad.m3u8) streams.push(this.getProxiedUrl(calidad.m3u8, false));
+            if (calidad.m3u8) {
+              streams.push(this.getProxiedUrl(calidad.m3u8, false));
+            }
           });
         } else if ((enlace as any).m3u8) {
           const oldM3u8 = (enlace as any).m3u8;
@@ -420,6 +451,7 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
            const foundInCalidad = enlace.calidades.find(c => this.normalizeUrlForComparison(c.m3u8) === currentNormalized);
            if (foundInCalidad) return enlace.canal || 'Stream';
         }
+        // Fallback estructura antigua
         if ((enlace as any).m3u8) {
            const oldM3u8 = (enlace as any).m3u8;
            const oldLinks = Array.isArray(oldM3u8) ? oldM3u8 : [oldM3u8];
@@ -456,6 +488,7 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
       }
     }
 
+    // Fallback estructura antigua
     const fallbackUrl = (firstLink as any).m3u8;
     if (fallbackUrl) {
         const urlToUse = Array.isArray(fallbackUrl) ? fallbackUrl[0] : fallbackUrl;
@@ -546,6 +579,7 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
     }
   }
 
+  // Método auxiliar para ocultar el navbar
   private hideNavbar(): void {
     const navbar = document.querySelector('app-navbar') as HTMLElement;
     if (navbar) {
@@ -553,10 +587,11 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
     }
   }
 
+  // Método auxiliar para mostrar el navbar
   private showNavbar(): void {
     const navbar = document.querySelector('app-navbar') as HTMLElement;
     if (navbar) {
-      navbar.style.display = '';
+      navbar.style.display = ''; // Restaura el estilo original del CSS
     }
   }
 
@@ -566,7 +601,6 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
 
     const doc = document as any;
     const elem = container as any;
-    const video = this.videoElement.nativeElement;
 
     const isInFullscreen = doc.fullscreenElement ||
       doc.webkitFullscreenElement ||
@@ -574,27 +608,18 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
       doc.msFullscreenElement;
 
     if (!isInFullscreen) {
+      // Ocultar navbar antes de entrar en fullscreen
       this.hideNavbar();
-      document.body.style.overflow = 'hidden';
-      window.scrollTo(0, 0);
 
       if (elem.requestFullscreen) elem.requestFullscreen();
       else if (elem.webkitRequestFullscreen) elem.webkitRequestFullscreen();
       else if (elem.mozRequestFullScreen) elem.mozRequestFullScreen();
       else if (elem.msRequestFullscreen) elem.msRequestFullscreen();
 
-      // --- FORZAR ESTILOS YOUTUBE ---
-      setTimeout(() => {
-        video.style.width = 'auto';
-        video.style.height = 'auto';
-        video.style.objectFit = 'contain';
-        video.style.maxWidth = '100%';
-        video.style.maxHeight = '100%';
-      }, 100);
-      // ------------------------------
-
+      // Después intentamos bloquear la orientación a landscape
       this.lockToLandscape();
     } else {
+      // Primero desbloqueamos la orientación
       this.unlockOrientation();
 
       if (doc.exitFullscreen) doc.exitFullscreen();
@@ -604,15 +629,29 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
     }
   }
 
+  /**
+   * Bloquea la orientación de la pantalla en modo landscape (horizontal)
+   * Requiere HTTPS y debe llamarse desde un gesto del usuario
+   */
   private lockToLandscape(): void {
+    // Verificar si la API de Screen Orientation está disponible
     if (this.isOrientationLockSupported()) {
       const screenOrientation = (screen as any).orientation;
+
       screenOrientation.lock('landscape')
-        .then(() => console.log('✅ Pantalla bloqueada en horizontal'))
-        .catch((error: any) => console.log('⚠️ No se pudo bloquear orientación:', error));
+        .then(() => {
+          console.log('✅ Pantalla bloqueada en orientación horizontal');
+        })
+        .catch((error: any) => {
+          console.log('⚠️ No se pudo bloquear la orientación:', error);
+          // Esto es normal en algunos navegadores, muchos ya rotan automáticamente
+        });
     }
   }
 
+  /**
+   * Desbloquea la orientación de la pantalla
+   */
   private unlockOrientation(): void {
     if (this.isOrientationLockSupported()) {
       (screen as any).orientation.unlock();
@@ -620,6 +659,9 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
     }
   }
 
+  /**
+   * Verifica si la API de Screen Orientation está disponible
+   */
   private isOrientationLockSupported(): boolean {
     return !!(
       typeof screen !== 'undefined' &&
