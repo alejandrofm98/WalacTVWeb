@@ -97,9 +97,10 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
       doc.msFullscreenElement
     );
 
-    // Si salimos de fullscreen, desbloqueamos la orientación
+    // Si salimos de fullscreen, desbloqueamos la orientación y mostramos navbar
     if (!this.isFullscreen) {
       this.unlockOrientation();
+      this.showNavbar();
     }
 
     this.cdr.markForCheck();
@@ -328,8 +329,9 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
     if (this.castSubscription) {
       this.castSubscription.unsubscribe();
     }
-    // Desbloquear orientación al destruir el componente
+    // Desbloquear orientación y mostrar navbar al destruir el componente
     this.unlockOrientation();
+    this.showNavbar();
   }
 
   // =========================
@@ -577,6 +579,22 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
     }
   }
 
+  // Método auxiliar para ocultar el navbar
+  private hideNavbar(): void {
+    const navbar = document.querySelector('app-navbar') as HTMLElement;
+    if (navbar) {
+      navbar.style.display = 'none';
+    }
+  }
+
+  // Método auxiliar para mostrar el navbar
+  private showNavbar(): void {
+    const navbar = document.querySelector('app-navbar') as HTMLElement;
+    if (navbar) {
+      navbar.style.display = ''; // Restaura el estilo original del CSS
+    }
+  }
+
   toggleFullscreen() {
     const container = this.videoElement.nativeElement.parentElement;
     if (!container) return;
@@ -590,7 +608,9 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
       doc.msFullscreenElement;
 
     if (!isInFullscreen) {
-      // Primero solicitamos fullscreen
+      // Ocultar navbar antes de entrar en fullscreen
+      this.hideNavbar();
+
       if (elem.requestFullscreen) elem.requestFullscreen();
       else if (elem.webkitRequestFullscreen) elem.webkitRequestFullscreen();
       else if (elem.mozRequestFullScreen) elem.mozRequestFullScreen();
