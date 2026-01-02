@@ -370,18 +370,6 @@ html:-webkit-full-screen {
   z-index: 1;
 }
 
-/* Ajuste específico para móviles */
-@media (max-width: 768px) {
-  .video-container:fullscreen .video-element,
-  .video-container:-webkit-full-screen .video-element,
-  .video-container:-moz-full-screen .video-element,
-  .video-container:-ms-fullscreen .video-element {
-    width: 100vw;
-    height: 100vh;
-    object-fit: contain;
-  }
-}
-
 /* Controles en fullscreen */
 .video-container:fullscreen .controls,
 .video-container:-webkit-full-screen .controls,
