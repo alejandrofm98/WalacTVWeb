@@ -369,6 +369,7 @@ html:-webkit-full-screen {
   .video-container:-ms-fullscreen .video-element {
     width: 100vw;
     height: 100vh;
+    object-fit: fill;
   }
 }
 
