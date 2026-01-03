@@ -21,6 +21,7 @@ import {Channel} from '../../models/channel.model';
 import {Subscription} from 'rxjs';
 
 import mpegts from 'mpegts.js/dist/mpegts.js';
+import Hls from 'hls.js';
 
 @Component({
   selector: 'app-video-player',
@@ -35,7 +36,8 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
   @Input() eventTitle: string = 'Reproducción en vivo';
   @Input() channel: Channel | null = null;
 
-  private player: any;
+  private player: any; // mpegts.js player
+  private hlsPlayer?: Hls; // hls.js player
   private shouldInitializePlayer = false;
   private dataService = inject(DataService);
   private playerState = inject(PlayerStateService);
@@ -316,9 +318,14 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   ngOnDestroy() {
+    // Destruir ambos reproductores
     if (this.player) {
       this.player.destroy();
       this.player = null;
+    }
+    if (this.hlsPlayer) {
+      this.hlsPlayer.destroy();
+      this.hlsPlayer = undefined;
     }
     if (this.hideControlsTimeout) {
       clearTimeout(this.hideControlsTimeout);
@@ -343,39 +350,82 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
    */
   private normalizeUrlForComparison(url: string): string {
     if (!url) return '';
-    // Quitamos el prefijo del proxy si existe
-    let clean = url.replace('iptv.walerike.com/stream-proxy/', '');
+
+    let clean = url;
+
+    // Remover formato antiguo de proxy
+    clean = clean.replace('iptv.walerike.com/stream-proxy/', '');
+
+    // Remover nuevo formato de proxy
+    if (clean.includes('walactv.walerike.com/proxy?url=')) {
+      try {
+        const urlParam = new URL(clean).searchParams.get('url');
+        if (urlParam) {
+          clean = urlParam;
+        } else {
+          clean = clean.replace(/.*walactv\.walerike\.com\/proxy\?url=/gi, '');
+        }
+      } catch {
+        clean = clean.replace(/.*walactv\.walerike\.com\/proxy\?url=/gi, '');
+      }
+    }
+
     // Quitamos protocolos (http/https)
     clean = clean.replace(/^https?:\/\//, '');
+
     return clean;
   }
 
   /**
-   * Determina si un enlace de evento es Acestream.
+   * Determina si un enlace necesita pasar por el proxy de iptv.walerike.com
+   * Esto aplica para enlaces de Acestream/line.ultra-8k.xyz
    */
-  private isAcestreamLink(url: string): boolean {
+  private needsProxyTransform(url: string): boolean {
     if (!url) return false;
     const lowerUrl = url.toLowerCase();
-    return lowerUrl.includes('ace') || lowerUrl.includes('line.ultra-8k.xyz');
+    // Solo aplicamos proxy para URLs de line.ultra-8k.xyz (acestream)
+    return lowerUrl.includes('line.ultra-8k.xyz');
+  }
+
+  /**
+   * Detecta si una URL ya tiene formato de proxy aplicado.
+   */
+  private isAlreadyProxied(url: string): boolean {
+    if (!url) return false;
+    return url.includes('walactv.walerike.com/proxy?url=') ||
+           url.includes('iptv.walerike.com/stream-proxy/');
   }
 
   /**
    * Devuelve la URL transformada con el proxy si es necesario.
+   * @param url - URL original
+   * @param forceProxy - Forzar proxy (usado para canales)
    */
   private getProxiedUrl(url: string, forceProxy: boolean = false): string {
     if (!url) return '';
 
+    // Si ya está proxificada (formato nuevo walactv o antiguo iptv), retornarla tal cual
+    if (this.isAlreadyProxied(url)) {
+      return url;
+    }
+
+    // Si forzamos proxy (canales), aplicar transformación
     if (forceProxy) {
       return this.applyProxyTransform(url);
     }
 
-    if (this.isAcestreamLink(url)) {
+    // Si es una URL que necesita proxy (line.ultra-8k.xyz), aplicar transformación
+    if (this.needsProxyTransform(url)) {
       return this.applyProxyTransform(url);
     }
 
+    // En cualquier otro caso, devolver la URL sin modificar
     return url;
   }
 
+  /**
+   * Aplica la transformación de proxy a una URL.
+   */
   private applyProxyTransform(url: string): string {
     const cleanUrl = url.replace(/^https?:\/\//, '');
     return `https://iptv.walerike.com/stream-proxy/${cleanUrl}`;
@@ -384,6 +434,27 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
   // =========================
   // MÉTODOS PÚBLICOS PARA EL HTML
   // =========================
+
+  /**
+   * Verifica si un valor es un array (usado en el template)
+   */
+  isArray(value: any): boolean {
+    return Array.isArray(value);
+  }
+
+  /**
+   * Convierte un valor a string[] para usar en *ngFor
+   */
+  asStringArray(value: any): string[] {
+    return Array.isArray(value) ? value : [];
+  }
+
+  /**
+   * Convierte un valor a string
+   */
+  asString(value: any): string {
+    return typeof value === 'string' ? value : '';
+  }
 
   /**
    * Se usa en el HTML para saber qué botón de calidad resaltar.
@@ -511,19 +582,115 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
     const urlToUse = this.streamUrl;
     if (!urlToUse) return;
 
+    // Destruir players anteriores
     if (this.player) {
       this.player.destroy();
       this.player = null;
     }
+    if (this.hlsPlayer) {
+      this.hlsPlayer.destroy();
+      this.hlsPlayer = undefined;
+    }
 
-    if (mpegts.isSupported()) {
+    // Determinar si la URL es HLS (.m3u8) o MPEG-TS
+    const isHLS = urlToUse.toLowerCase().includes('.m3u8');
+
+    if (isHLS) {
+      console.log('🎬 Reproduciendo HLS');
+
+      if (Hls.isSupported()) {
+        // Usar HLS.js para navegadores modernos (Chrome, Firefox, Edge)
+        console.log('✅ Usando HLS.js');
+
+        this.hlsPlayer = new Hls({
+          enableWorker: true,
+          lowLatencyMode: true,
+          backBufferLength: 90,
+          debug: false
+        });
+
+        this.hlsPlayer.loadSource(urlToUse);
+        this.hlsPlayer.attachMedia(video);
+
+        this.hlsPlayer.on(Hls.Events.MANIFEST_PARSED, () => {
+          console.log('✅ Manifest HLS cargado correctamente');
+          video.play().catch((error) => {
+            console.log('Autoplay bloqueado:', error);
+            video.muted = true;
+            video.play().then(() => {
+              setTimeout(() => {
+                video.muted = false;
+                this.isMuted = false;
+                this.cdr.markForCheck();
+              }, 3000);
+            }).catch(() => {
+              console.log('Autoplay requiere interacción del usuario');
+            });
+          });
+        });
+
+        this.hlsPlayer.on(Hls.Events.ERROR, (event, data) => {
+          console.error('HLS.js error:', data);
+          if (data.fatal) {
+            switch (data.type) {
+              case Hls.ErrorTypes.NETWORK_ERROR:
+                console.log('❌ Error de red fatal, intentando recuperar...');
+                this.hlsPlayer?.startLoad();
+                break;
+              case Hls.ErrorTypes.MEDIA_ERROR:
+                console.log('❌ Error de medio fatal, intentando recuperar...');
+                this.hlsPlayer?.recoverMediaError();
+                break;
+              default:
+                console.error('❌ Error fatal no recuperable, destruyendo player');
+                this.hlsPlayer?.destroy();
+                this.hlsPlayer = undefined;
+                break;
+            }
+          }
+        });
+
+      } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+        // Safari tiene soporte nativo de HLS
+        console.log('✅ Usando reproducción nativa de HLS (Safari)');
+        video.src = urlToUse;
+        video.load();
+
+        video.play().catch((error) => {
+          console.log('Autoplay bloqueado:', error);
+          video.muted = true;
+          video.play().then(() => {
+            setTimeout(() => {
+              video.muted = false;
+              this.isMuted = false;
+              this.cdr.markForCheck();
+            }, 3000);
+          }).catch(() => {
+            console.log('Autoplay requiere interacción del usuario');
+          });
+        });
+      }
+
+      this.setupVideoEventListeners(video);
+
+    } else if (mpegts.isSupported()) {
+      // Para MPEG-TS, usar mpegts.js (canales acestream)
+      console.log('🎬 Reproduciendo MPEG-TS con mpegts.js');
+
       this.player = mpegts.createPlayer({
         type: 'mpegts',
         isLive: true,
         url: urlToUse,
         enableWorker: true,
         liveBufferLatencyChasing: true,
-        lazyLoad: false
+        lazyLoad: false,
+        enableStashBuffer: false,
+        stashInitialSize: 128
+      });
+
+      this.player.on(mpegts.Events.ERROR, (type: any, detail: any) => {
+        console.error('mpegts.js error:', type, detail);
+        this.handlePlayerError(type, detail);
       });
 
       this.player.attachMediaElement(video);
@@ -531,15 +698,45 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
 
       video.muted = false;
       this.player.play().catch((error: any) => {
-        console.log('Autoplay bloqueado, reintentando sin mutear:', error);
-        setTimeout(() => {
-          this.player!.play().catch(() => {
-            console.log('Autoplay requiere interacción del usuario');
-          });
-        }, 100);
+        console.log('Autoplay bloqueado:', error);
+        video.muted = true;
+        this.player.play().then(() => {
+          setTimeout(() => {
+            video.muted = false;
+            this.isMuted = false;
+            this.cdr.markForCheck();
+          }, 3000);
+        }).catch(() => {
+          console.log('Autoplay requiere interacción del usuario');
+        });
       });
+
+      this.setupVideoEventListeners(video);
+    }
+  }
+
+  /**
+   * Maneja errores del player de mpegts.js.
+   */
+  private handlePlayerError(type: any, detail: any): void {
+    console.log('Player error handler:', type, detail);
+
+    // Error de red o CORS
+    if (type === 'networkError' || type === 'network') {
+      console.log('Posible error de red o CORS, verificando URL...');
+      // Aquí podrías implementar reintentos o cambiar de URL
     }
 
+    // Error de medio
+    if (type === 'mediaError' || type === 'media') {
+      console.log('Error en el medio de reproducción');
+    }
+  }
+
+  /**
+   * Configura los event listeners del elemento de video.
+   */
+  private setupVideoEventListeners(video: HTMLVideoElement): void {
     video.addEventListener('play', () => {
       this.isPlaying = true;
       this.cdr.markForCheck();
@@ -554,6 +751,18 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
       this.volume = video.volume;
       this.isMuted = video.muted;
       this.cdr.markForCheck();
+    });
+
+    video.addEventListener('waiting', () => {
+      console.log('Video esperando datos...');
+    });
+
+    video.addEventListener('canplay', () => {
+      console.log('Video puede comenzar a reproducirse');
+    });
+
+    video.addEventListener('error', (e) => {
+      console.error('Error en el elemento de video:', e);
     });
   }
 
@@ -644,7 +853,6 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
         })
         .catch((error: any) => {
           console.log('⚠️ No se pudo bloquear la orientación:', error);
-          // Esto es normal en algunos navegadores, muchos ya rotan automáticamente
         });
     }
   }

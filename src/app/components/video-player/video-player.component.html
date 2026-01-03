@@ -116,9 +116,11 @@
 
   <!-- Sección de opciones por canal (solo eventos) -->
   <div class="channel-options" *ngIf="!isChannelMode && eventData?.enlaces?.length">
-    <div class="channel-section" *ngFor="let enlace of eventData?.enlaces">
+    <div class="channel-section" *ngFor="let enlace of eventData?.enlaces; let i = index">
       <h3 class="channel-title">{{ enlace.canal }}</h3>
-      <div class="options-row">
+
+      <!-- Nuevo formato: con calidades array -->
+      <div class="options-row" *ngIf="enlace.calidades && enlace.calidades.length > 0">
         <button
           *ngFor="let calidad of enlace.calidades"
           class="option-button"
@@ -126,6 +128,30 @@
           (click)="changeStream(calidad.m3u8)">
           {{ calidad.calidad }}
         </button>
+      </div>
+
+      <!-- Formato antiguo: m3u8 directo (string o array) -->
+      <div class="options-row" *ngIf="!enlace.calidades && enlace.m3u8">
+        <!-- Si m3u8 es un array -->
+        <ng-container *ngIf="isArray(enlace.m3u8)">
+          <button
+            *ngFor="let url of asStringArray(enlace.m3u8); let j = index"
+            class="option-button"
+            [class.active]="isStreamActive(url)"
+            (click)="changeStream(url)">
+            Opción {{ j + 1 }}
+          </button>
+        </ng-container>
+
+        <!-- Si m3u8 es un string único -->
+        <ng-container *ngIf="!isArray(enlace.m3u8)">
+          <button
+            class="option-button"
+            [class.active]="isStreamActive(asString(enlace.m3u8))"
+            (click)="changeStream(asString(enlace.m3u8))">
+            Ver Stream
+          </button>
+        </ng-container>
       </div>
     </div>
   </div>
