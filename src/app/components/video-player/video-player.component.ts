@@ -575,145 +575,176 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
     }
   }
 
-  private initializePlayer() {
-    const video = this.videoElement?.nativeElement;
-    if (!video) return;
+  // Reemplaza el método initializePlayer() con esta versión mejorada:
 
-    const urlToUse = this.streamUrl;
-    if (!urlToUse) return;
+// Reemplaza el método initializePlayer() con esta versión mejorada:
 
-    // Destruir players anteriores
-    if (this.player) {
-      this.player.destroy();
-      this.player = null;
-    }
-    if (this.hlsPlayer) {
-      this.hlsPlayer.destroy();
-      this.hlsPlayer = undefined;
-    }
+private initializePlayer() {
+  const video = this.videoElement?.nativeElement;
+  if (!video) return;
 
-    // Determinar si la URL es HLS (.m3u8) o MPEG-TS
-    const isHLS = urlToUse.toLowerCase().includes('.m3u8');
+  const urlToUse = this.streamUrl;
+  if (!urlToUse) return;
 
-    if (isHLS) {
-      console.log('🎬 Reproduciendo HLS');
+  // GUARDAR el estado actual del audio ANTES de destruir el player
+  const wasPlaying = !video.paused;
+  const currentVolume = video.volume;
+  const wasMuted = video.muted;
 
-      if (Hls.isSupported()) {
-        // Usar HLS.js para navegadores modernos (Chrome, Firefox, Edge)
-        console.log('✅ Usando HLS.js');
+  // Destruir players anteriores
+  if (this.player) {
+    this.player.destroy();
+    this.player = null;
+  }
+  if (this.hlsPlayer) {
+    this.hlsPlayer.destroy();
+    this.hlsPlayer = undefined;
+  }
 
-        this.hlsPlayer = new Hls({
-          enableWorker: true,
-          lowLatencyMode: true,
-          backBufferLength: 90,
-          debug: false
-        });
+  // Determinar si la URL es HLS (.m3u8) o MPEG-TS
+  const isHLS = urlToUse.toLowerCase().includes('.m3u8');
 
-        this.hlsPlayer.loadSource(urlToUse);
-        this.hlsPlayer.attachMedia(video);
+  if (isHLS) {
+    console.log('🎬 Reproduciendo HLS');
 
-        this.hlsPlayer.on(Hls.Events.MANIFEST_PARSED, () => {
-          console.log('✅ Manifest HLS cargado correctamente');
+    if (Hls.isSupported()) {
+      console.log('✅ Usando HLS.js');
+
+      this.hlsPlayer = new Hls({
+        enableWorker: true,
+        lowLatencyMode: true,
+        backBufferLength: 90,
+        debug: false
+      });
+
+      this.hlsPlayer.loadSource(urlToUse);
+      this.hlsPlayer.attachMedia(video);
+
+      this.hlsPlayer.on(Hls.Events.MANIFEST_PARSED, () => {
+        console.log('✅ Manifest HLS cargado correctamente');
+
+        // RESTAURAR el estado del audio ANTES de reproducir
+        video.volume = currentVolume;
+        video.muted = wasMuted;
+
+        // Si ya estaba reproduciendo (cambio de canal), reproducir directamente
+        if (wasPlaying) {
+          video.play().then(() => {
+            console.log('✅ Reproducción iniciada manteniendo audio');
+          }).catch((error) => {
+            console.log('Error al reproducir:', error);
+          });
+        } else {
+          // Primera carga: intentar autoplay
           video.play().catch((error) => {
             console.log('Autoplay bloqueado:', error);
             video.muted = true;
-            video.play().then(() => {
-              setTimeout(() => {
-                video.muted = false;
-                this.isMuted = false;
-                this.cdr.markForCheck();
-              }, 3000);
-            }).catch(() => {
+            video.play().catch(() => {
               console.log('Autoplay requiere interacción del usuario');
             });
           });
-        });
+        }
+      });
 
-        this.hlsPlayer.on(Hls.Events.ERROR, (event, data) => {
-          console.error('HLS.js error:', data);
-          if (data.fatal) {
-            switch (data.type) {
-              case Hls.ErrorTypes.NETWORK_ERROR:
-                console.log('❌ Error de red fatal, intentando recuperar...');
-                this.hlsPlayer?.startLoad();
-                break;
-              case Hls.ErrorTypes.MEDIA_ERROR:
-                console.log('❌ Error de medio fatal, intentando recuperar...');
-                this.hlsPlayer?.recoverMediaError();
-                break;
-              default:
-                console.error('❌ Error fatal no recuperable, destruyendo player');
-                this.hlsPlayer?.destroy();
-                this.hlsPlayer = undefined;
-                break;
-            }
+      this.hlsPlayer.on(Hls.Events.ERROR, (event, data) => {
+        console.error('HLS.js error:', data);
+        if (data.fatal) {
+          switch (data.type) {
+            case Hls.ErrorTypes.NETWORK_ERROR:
+              console.log('❌ Error de red fatal, intentando recuperar...');
+              this.hlsPlayer?.startLoad();
+              break;
+            case Hls.ErrorTypes.MEDIA_ERROR:
+              console.log('❌ Error de medio fatal, intentando recuperar...');
+              this.hlsPlayer?.recoverMediaError();
+              break;
+            default:
+              console.error('❌ Error fatal no recuperable, destruyendo player');
+              this.hlsPlayer?.destroy();
+              this.hlsPlayer = undefined;
+              break;
           }
+        }
+      });
+
+    } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+      console.log('✅ Usando reproducción nativa de HLS (Safari)');
+
+      // RESTAURAR el estado del audio ANTES de cargar
+      video.volume = currentVolume;
+      video.muted = wasMuted;
+
+      video.src = urlToUse;
+      video.load();
+
+      // Si ya estaba reproduciendo (cambio de canal), reproducir directamente
+      if (wasPlaying) {
+        video.play().then(() => {
+          console.log('✅ Reproducción iniciada manteniendo audio');
+        }).catch((error) => {
+          console.log('Error al reproducir:', error);
         });
-
-      } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-        // Safari tiene soporte nativo de HLS
-        console.log('✅ Usando reproducción nativa de HLS (Safari)');
-        video.src = urlToUse;
-        video.load();
-
+      } else {
+        // Primera carga: intentar autoplay
         video.play().catch((error) => {
           console.log('Autoplay bloqueado:', error);
           video.muted = true;
-          video.play().then(() => {
-            setTimeout(() => {
-              video.muted = false;
-              this.isMuted = false;
-              this.cdr.markForCheck();
-            }, 3000);
-          }).catch(() => {
+          video.play().catch(() => {
             console.log('Autoplay requiere interacción del usuario');
           });
         });
       }
+    }
 
-      this.setupVideoEventListeners(video);
+    this.setupVideoEventListeners(video);
 
-    } else if (mpegts.isSupported()) {
-      // Para MPEG-TS, usar mpegts.js (canales acestream)
-      console.log('🎬 Reproduciendo MPEG-TS con mpegts.js');
+  } else if (mpegts.isSupported()) {
+    console.log('🎬 Reproduciendo MPEG-TS con mpegts.js');
 
-      this.player = mpegts.createPlayer({
-        type: 'mpegts',
-        isLive: true,
-        url: urlToUse,
-        enableWorker: true,
-        liveBufferLatencyChasing: true,
-        lazyLoad: false,
-        enableStashBuffer: false,
-        stashInitialSize: 128
+    this.player = mpegts.createPlayer({
+      type: 'mpegts',
+      isLive: true,
+      url: urlToUse,
+      enableWorker: true,
+      liveBufferLatencyChasing: true,
+      lazyLoad: false,
+      enableStashBuffer: false,
+      stashInitialSize: 128
+    });
+
+    this.player.on(mpegts.Events.ERROR, (type: any, detail: any) => {
+      console.error('mpegts.js error:', type, detail);
+      this.handlePlayerError(type, detail);
+    });
+
+    this.player.attachMediaElement(video);
+    this.player.load();
+
+    // RESTAURAR el estado del audio ANTES de reproducir
+    video.volume = currentVolume;
+    video.muted = wasMuted;
+
+    // Si ya estaba reproduciendo (cambio de canal), reproducir directamente
+    if (wasPlaying) {
+      this.player.play().then(() => {
+        console.log('✅ Reproducción iniciada manteniendo audio');
+      }).catch((error: any) => {
+        console.log('Error al reproducir:', error);
       });
-
-      this.player.on(mpegts.Events.ERROR, (type: any, detail: any) => {
-        console.error('mpegts.js error:', type, detail);
-        this.handlePlayerError(type, detail);
-      });
-
-      this.player.attachMediaElement(video);
-      this.player.load();
-
-      video.muted = false;
+    } else {
+      // Primera carga: intentar autoplay
       this.player.play().catch((error: any) => {
         console.log('Autoplay bloqueado:', error);
         video.muted = true;
-        this.player.play().then(() => {
-          setTimeout(() => {
-            video.muted = false;
-            this.isMuted = false;
-            this.cdr.markForCheck();
-          }, 3000);
-        }).catch(() => {
+        this.player.play().catch(() => {
           console.log('Autoplay requiere interacción del usuario');
         });
       });
-
-      this.setupVideoEventListeners(video);
     }
+
+    this.setupVideoEventListeners(video);
   }
+}
 
   /**
    * Maneja errores del player de mpegts.js.
