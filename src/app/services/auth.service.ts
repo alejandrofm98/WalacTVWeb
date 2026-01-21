@@ -21,7 +21,10 @@ export class AuthService {
   private activityInterval: any = null;
   private sessionMonitorUnsubscribe: (() => void) | null = null;
   private isLoggingIn = false;
-  private isManualLogout = false; // 🆕 Nueva bandera
+  private isManualLogout = false;
+  private sessionVerified = false;
+  private verificationTimeout: any = null;
+  private reconnectUnsubscribe: (() => void) | null = null; // 🆕
 
   constructor() {
     this.currentDeviceId = this.generateUniqueId();
@@ -39,6 +42,7 @@ export class AuthService {
         console.log('👤 onAuthStateChanged: Usuario detectado (auto-config)');
         this.updateLastActivity(user.uid);
         this.setupDisconnectHandler(user.uid);
+        this.setupReconnectHandler(user.uid);
         this.monitorSessionValidity(user.uid);
         this.startActivityPing(user.uid);
       } else if (!user) {
@@ -73,10 +77,16 @@ export class AuthService {
       this.sessionMonitorUnsubscribe();
       this.sessionMonitorUnsubscribe = null;
     }
+    if (this.verificationTimeout) {
+      clearTimeout(this.verificationTimeout);
+      this.verificationTimeout = null;
+    }
+    this.stopReconnectHandler();
   }
 
   private monitorSessionValidity(uid: string): void {
     this.stopSessionMonitor();
+    this.sessionVerified = false; // 🆕 Resetear flag
 
     const sessionRef = ref(this.db, `activeSessions/${uid}/${this.currentDeviceId}`);
     console.log('👁️ Iniciando monitor de sesión para device:', this.currentDeviceId);
@@ -90,12 +100,26 @@ export class AuthService {
         data: data,
         hasCurrentUser: !!this.auth.currentUser,
         isLoggingIn: this.isLoggingIn,
-        isManualLogout: this.isManualLogout // 🆕 Log adicional
+        isManualLogout: this.isManualLogout,
+        sessionVerified: this.sessionVerified
       });
 
-      // 🆕 Solo mostrar alerta si NO es un cierre manual
-      if (!snapshot.exists() && this.auth.currentUser && !this.isLoggingIn && !this.isManualLogout) {
-        console.log('⚠️ Sesión eliminada - Cerrando sesión local');
+      // 🆕 Ignorar si está en proceso de login/logout
+      if (this.isLoggingIn || this.isManualLogout) {
+        console.log('⏭️ Ignorando cambio de sesión (login/logout en progreso)');
+        return;
+      }
+
+      // 🆕 Ignorar si la sesión aún no ha sido verificada (delay de 2 segundos)
+      if (!this.sessionVerified && this.auth.currentUser) {
+        console.log('⏳ Esperando verificación de sesión...');
+        this.scheduleSessionVerification(uid);
+        return;
+      }
+
+      // 🆕 Solo mostrar alerta si la sesión YA fue verificada y ahora desaparece
+      if (!snapshot.exists() && this.sessionVerified && this.auth.currentUser) {
+        console.log('⚠️ Sesión eliminada DESPUÉS de verificación - Cerrando sesión local');
 
         this.stopActivityPing();
         this.stopSessionMonitor();
@@ -108,6 +132,51 @@ export class AuthService {
         });
       }
     });
+  }
+
+  // 🆕 Nueva función: Programa verificación de sesión
+  private scheduleSessionVerification(uid: string): void {
+    if (this.verificationTimeout) {
+      clearTimeout(this.verificationTimeout);
+    }
+
+    this.verificationTimeout = setTimeout(async () => {
+      console.log('🔍 Verificando que la sesión existe...');
+
+      // Verificar directamente si la sesión existe
+      const sessionRef = ref(this.db, `activeSessions/${uid}/${this.currentDeviceId}`);
+      const snapshot = await get(sessionRef);
+
+      if (snapshot.exists()) {
+        console.log('✅ Sesión verificada correctamente');
+        this.sessionVerified = true;
+      } else if (this.auth.currentUser && !this.isManualLogout) {
+        // La sesión no existe pero el usuario está logueado
+        // Esto puede significar que fue reemplazada por otra sesión
+        console.log('⚠️ Sesión no encontrada después del delay - posiblemente reemplazada');
+
+        // Verificar si hay otras sesiones activas
+        const allSessionsRef = ref(this.db, `activeSessions/${uid}`);
+        const allSnap = await get(allSessionsRef);
+        const sessions = allSnap.val();
+
+        if (sessions && Object.keys(sessions).length > 0) {
+          const otherSession = Object.entries(sessions).find(([id]) => id !== this.currentDeviceId);
+          if (otherSession) {
+            console.log('🔄 Otra sesión activa detectada, cerrando local...');
+            this.stopActivityPing();
+            this.stopSessionMonitor();
+
+            signOut(this.auth).then(() => {
+              alert('Tu sesión ha sido cerrada porque iniciaste sesión en otro dispositivo');
+              window.location.href = '/login';
+            });
+          }
+        }
+      }
+
+      this.verificationTimeout = null;
+    }, 2000); // 🆕 Delay de 2 segundos
   }
 
   private updateLastActivity(uid: string): void {
@@ -128,6 +197,37 @@ export class AuthService {
     const sessionRef = ref(this.db, `activeSessions/${uid}/${this.currentDeviceId}`);
     onDisconnect(sessionRef).remove();
     console.log('🔌 Handler de desconexión configurado');
+  }
+
+  private setupReconnectHandler(uid: string): void {
+    this.stopReconnectHandler();
+
+    const connectionRef = ref(this.db, '.info/connected');
+
+    this.reconnectUnsubscribe = onValue(connectionRef, async (snap) => {
+      if (snap.val() === true && this.auth.currentUser && !this.isManualLogout) {
+        console.log('🔄 Conexión restaurada, verificando sesión...');
+
+        await new Promise(resolve => setTimeout(resolve, 500));
+
+        const sessionRef = ref(this.db, `activeSessions/${uid}/${this.currentDeviceId}`);
+        const snapshot = await get(sessionRef);
+
+        if (!snapshot.exists()) {
+          console.log('🔄 Sesión no existe, recreando después de reconexión...');
+          await this.registerSession(uid);
+        } else {
+          console.log('✅ Sesión intacta después de reconexión');
+        }
+      }
+    });
+  }
+
+  private stopReconnectHandler(): void {
+    if (this.reconnectUnsubscribe) {
+      this.reconnectUnsubscribe();
+      this.reconnectUnsubscribe = null;
+    }
   }
 
   /**
@@ -229,6 +329,7 @@ export class AuthService {
     console.log('📝 Registrando sesión:', sessionData);
     await set(sessionRef, sessionData);
     this.setupDisconnectHandler(uid);
+    this.sessionVerified = true; // 🆕 Marcar como verificada inmediatamente
   }
 
   /**
@@ -275,6 +376,7 @@ export class AuthService {
 
         // Configurar monitoring y pings
         this.setupDisconnectHandler(uid);
+        this.setupReconnectHandler(uid);
         this.monitorSessionValidity(uid);
         this.startActivityPing(uid);
 
@@ -296,6 +398,7 @@ export class AuthService {
 
         // Configurar monitoring y pings
         this.setupDisconnectHandler(uid);
+        this.setupReconnectHandler(uid);
         this.monitorSessionValidity(uid);
         this.startActivityPing(uid);
 
