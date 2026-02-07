@@ -6,6 +6,7 @@ import {DataService, IptvChannel, PaginatedResponse} from '../../services/data.s
 import {PlayerStateService} from '../../services/player-state.service';
 import {slugify} from '../../utils/slugify';
 import {NavbarComponent} from '../../shared/components/navbar-component/navbar.component';
+import {HttpsPipe} from '../../pipes/https.pipe';
 
 interface ChannelGroup {
   name: string;
@@ -16,7 +17,7 @@ interface ChannelGroup {
 @Component({
   selector: 'app-tv-channels',
   standalone: true,
-  imports: [CommonModule, FormsModule, NavbarComponent],
+  imports: [CommonModule, FormsModule, NavbarComponent, HttpsPipe],
   templateUrl: './tv-channels.component.html',
   styleUrls: ['./tv-channels.component.css']
 })

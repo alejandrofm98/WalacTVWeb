@@ -41,7 +41,7 @@
           (click)="onChannelClick(channel)">
           <div class="channel-number">{{ channel.num }}</div>
           <div class="channel-logo">
-            <img [src]="channel.logo" [alt]="channel.nombre" />
+            <img [src]="channel.logo | https" [alt]="channel.nombre" />
           </div>
           <div class="channel-name">
             {{ channel.nombre }}

@@ -10,7 +10,7 @@ type TabType = 'channels' | 'movies' | 'series';
 @Component({
   selector: 'app-events-list',
   standalone: true,
-  imports: [CommonModule, NavbarComponent],
+  imports: [CommonModule, NavbarComponent, HttpsPipe],
   templateUrl: './events-list.component.html',
   styleUrls: ['./events-list.component.css']
 })

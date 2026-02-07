@@ -71,7 +71,7 @@
       class="event-card"
       (click)="onChannelClick(channel)">
       <div class="event-content">
-        <img *ngIf="getPosterUrl(channel)" [src]="getPosterUrl(channel)" alt="{{ channel.nombre }}" class="poster-image">
+        <img *ngIf="getPosterUrl(channel)" [src]="getPosterUrl(channel) | https" alt="{{ channel.nombre }}" class="poster-image">
         <div class="poster-placeholder" *ngIf="!getPosterUrl(channel)">
           <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -90,7 +90,7 @@
       class="event-card"
       (click)="onMovieClick(movie)">
       <div class="event-content">
-        <img *ngIf="getPosterUrl(movie)" [src]="getPosterUrl(movie)" alt="{{ movie.nombre }}" class="poster-image">
+        <img *ngIf="getPosterUrl(movie)" [src]="getPosterUrl(movie) | https" alt="{{ movie.nombre }}" class="poster-image">
         <div class="poster-placeholder" *ngIf="!getPosterUrl(movie)">
           <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -109,7 +109,7 @@
       class="event-card"
       (click)="onSeriesClick(serie)">
       <div class="event-content">
-        <img *ngIf="getPosterUrl(serie)" [src]="getPosterUrl(serie)" alt="{{ serie.nombre }}" class="poster-image">
+        <img *ngIf="getPosterUrl(serie)" [src]="getPosterUrl(serie) | https" alt="{{ serie.nombre }}" class="poster-image">
         <div class="poster-placeholder" *ngIf="!getPosterUrl(serie)">
           <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
