@@ -1,135 +1,187 @@
-import { Injectable } from '@angular/core';
-import {Firestore, doc, getDoc, collectionData, collection} from '@angular/fire/firestore';
-import { Observable, from, of, catchError, switchMap } from 'rxjs';
+import { Injectable, inject } from '@angular/core';
+import { HttpClient, HttpParams } from '@angular/common/http';
+import { Observable, of, BehaviorSubject } from 'rxjs';
+import { catchError, map } from 'rxjs/operators';
+import { environment } from '../../environments/environment';
 
-@Injectable({ providedIn: 'root' })
+export interface IptvChannel {
+  id: string;
+  num: number;
+  nombre: string;
+  logo: string;
+  grupo: string;
+  country: string;
+  provider_id: string;
+  stream_url: string;
+}
+
+export interface IptvMovie {
+  id: string;
+  num: number;
+  nombre: string;
+  logo: string;
+  grupo: string;
+  country: string;
+  provider_id: string;
+  stream_url: string;
+}
+
+export interface IptvSeries {
+  id: string;
+  num: number;
+  nombre: string;
+  logo: string;
+  grupo: string;
+  country: string;
+  provider_id: string;
+  temporada: string;
+  episodio: string;
+  stream_url: string;
+}
+
+export interface PaginatedResponse<T> {
+  total: number;
+  skip: number;
+  limit: number;
+  items: T[];
+}
+
+@Injectable({
+  providedIn: 'root'
+})
 export class DataService {
-  constructor(private firestore: Firestore) {}
+  private http = inject(HttpClient);
+  private apiUrl = environment.iptvApiUrl;
 
-  /**
-   * Obtiene eventos del día actual, si no hay busca en el día anterior
-   */
-  getItems(): Observable<any> {
-    return from(this.fetchEventsWithFallback());
-  }
-
-   /**
-   * Obtiene la lista de canales de TV desde el documento canales_2.0
-   */
-  getChannels(): Observable<any> {
-    return from(this.fetchChannels());
-  }
-
-  /**
-   * Obtiene el documento canales_2.0 de la colección canales
-   */
-  private async fetchChannels(): Promise<any> {
-    try {
-      console.log('📺 Buscando canales en canales_iptv...');
-
-      const docRef = doc(this.firestore, 'canales', 'canales_iptv');
-      const docSnap = await getDoc(docRef);
-
-      if (docSnap.exists()) {
-        const data = docSnap.data();
-        console.log('✅ Canales encontrados:', data);
-        return data;
-      } else {
-        console.log('❌ Documento canales_iptv no existe');
-        return null;
-      }
-    } catch (error) {
-      console.error('❌ Error obteniendo canales:', error);
-      return null;
-    }
-  }
-
-  /**
-   * Intenta obtener eventos del día actual, si falla o está vacío busca día anterior
-   */
-  private async fetchEventsWithFallback(): Promise<any> {
-    console.log('🔍 Buscando eventos...');
-
-    // 1. Intentar obtener eventos del día actual
-    const todayDocument = await this.tryFetchEvents(0);
-
-    if (todayDocument && this.hasValidEvents(todayDocument)) {
-      console.log('✅ Eventos encontrados para hoy');
-      return todayDocument;
-    }
-
-    console.log('⚠️ No hay eventos para hoy, buscando día anterior...');
-
-    // 2. Si no hay eventos hoy, buscar día anterior
-    const yesterdayDocument = await this.tryFetchEvents(-1);
-
-    if (yesterdayDocument && this.hasValidEvents(yesterdayDocument)) {
-      console.log('✅ Eventos encontrados para ayer');
-      return yesterdayDocument;
-    }
-
-    console.log('❌ No se encontraron eventos ni para hoy ni para ayer');
-
-    // 3. Si tampoco hay eventos ayer, retornar estructura vacía
+  private getCredentials(): { username: string; password: string } {
     return {
-      dia: this.getDateString(0),
-      eventos: []
+      username: localStorage.getItem('iptv_username') || '',
+      password: localStorage.getItem('iptv_password') || ''
     };
   }
 
-  /**
-   * Intenta obtener eventos de un día específico (offset en días)
-   */
-  private async tryFetchEvents(daysOffset: number): Promise<any | null> {
-    try {
-      const dateString = this.getDateString(daysOffset);
-      const documentName = `eventos_${dateString}`;
+  private buildParams(skip: number, limit: number, group?: string, country?: string): HttpParams {
+    const { username, password } = this.getCredentials();
+    let params = new HttpParams()
+      .set('username', username)
+      .set('password', password)
+      .set('skip', skip.toString())
+      .set('limit', limit.toString());
 
-      console.log(`📅 Buscando documento: ${documentName}`);
+    if (group) params = params.set('group', group);
+    if (country) params = params.set('country', country);
 
-      const docRef = doc(this.firestore, 'tvLibreEventos', documentName);
-      const docSnap = await getDoc(docRef);
-
-      if (docSnap.exists()) {
-        const data = docSnap.data();
-        console.log(`📄 Documento encontrado:`, data);
-        return data;
-      } else {
-        console.log(`📄 Documento no existe: ${documentName}`);
-        return null;
-      }
-    } catch (error) {
-      console.error(`❌ Error obteniendo eventos para offset ${daysOffset}:`, error);
-      return null;
-    }
+    return params;
   }
 
+  getChannels(skip: number = 0, limit: number = 50, group?: string, country?: string): Observable<PaginatedResponse<IptvChannel>> {
+    const params = this.buildParams(skip, limit, group, country);
 
-
-  /**
-   * Verifica si el documento tiene eventos válidos
-   */
-  private hasValidEvents(document: any): boolean {
-    return document &&
-           document.eventos &&
-           Array.isArray(document.eventos) &&
-           document.eventos.length > 0;
+    return this.http.get<PaginatedResponse<IptvChannel>>(
+      `${this.apiUrl}/api/channels`,
+      { params }
+    ).pipe(
+      catchError(() => of({ total: 0, skip, limit, items: [] }))
+    );
   }
 
-  /**
-   * Genera string de fecha en formato DD.MM.YYYY con offset de días
-   */
-  private getDateString(daysOffset: number): string {
-    const date = new Date();
-    date.setDate(date.getDate() + daysOffset);
+  getChannel(id: string): Observable<IptvChannel | null> {
+    const { username, password } = this.getCredentials();
+    const params = new HttpParams()
+      .set('username', username)
+      .set('password', password);
 
-    const day = String(date.getDate()).padStart(2, '0');
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const year = date.getFullYear();
-
-    return `${day}.${month}.${year}`;
+    return this.http.get<IptvChannel>(
+      `${this.apiUrl}/api/channels/${id}`,
+      { params }
+    ).pipe(
+      catchError(() => of(null))
+    );
   }
 
+  getMovies(skip: number = 0, limit: number = 50, group?: string, country?: string): Observable<PaginatedResponse<IptvMovie>> {
+    const params = this.buildParams(skip, limit, group, country);
 
+    return this.http.get<PaginatedResponse<IptvMovie>>(
+      `${this.apiUrl}/api/movies`,
+      { params }
+    ).pipe(
+      catchError(() => of({ total: 0, skip, limit, items: [] }))
+    );
+  }
 
+  getMovie(id: string): Observable<IptvMovie | null> {
+    const { username, password } = this.getCredentials();
+    const params = new HttpParams()
+      .set('username', username)
+      .set('password', password);
+
+    return this.http.get<IptvMovie>(
+      `${this.apiUrl}/api/movies/${id}`,
+      { params }
+    ).pipe(
+      catchError(() => of(null))
+    );
+  }
+
+  getSeries(skip: number = 0, limit: number = 50, group?: string, country?: string): Observable<PaginatedResponse<IptvSeries>> {
+    const params = this.buildParams(skip, limit, group, country);
+
+    return this.http.get<PaginatedResponse<IptvSeries>>(
+      `${this.apiUrl}/api/series`,
+      { params }
+    ).pipe(
+      catchError(() => of({ total: 0, skip, limit, items: [] }))
+    );
+  }
+
+  getSerie(id: string): Observable<IptvSeries | null> {
+    const { username, password } = this.getCredentials();
+    const params = new HttpParams()
+      .set('username', username)
+      .set('password', password);
+
+    return this.http.get<IptvSeries>(
+      `${this.apiUrl}/api/series/${id}`,
+      { params }
+    ).pipe(
+      catchError(() => of(null))
+    );
+  }
+
+  getGroups(contentType: 'channels' | 'movies' | 'series' = 'channels'): Observable<string[]> {
+    return this.http.get<{ groups: string[] }>(
+      `${this.apiUrl}/api/content/groups`
+    ).pipe(
+      map(response => response.groups || []),
+      catchError(() => of([]))
+    );
+  }
+
+  getCountries(contentType: 'channels' | 'movies' | 'series' = 'channels'): Observable<string[]> {
+    return this.http.get<{ countries: string[] }>(
+      `${this.apiUrl}/api/content/countries`
+    ).pipe(
+      map(response => response.countries || []),
+      catchError(() => of([]))
+    );
+  }
+
+  getCounts(): Observable<{ channels: number; movies: number; series: number }> {
+    const { username, password } = this.getCredentials();
+    const params = new HttpParams()
+      .set('username', username)
+      .set('password', password);
+
+    return this.http.get<{ channels: number; movies: number; series: number }>(
+      `${this.apiUrl}/api/content/count`,
+      { params }
+    ).pipe(
+      catchError(() => of({ channels: 0, movies: 0, series: 0 }))
+    );
+  }
+
+  getStreamUrl(type: 'live' | 'movie' | 'series', streamId: string): string {
+    return '';
+  }
 }

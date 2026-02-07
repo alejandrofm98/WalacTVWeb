@@ -539,3 +539,49 @@ h1 {
     min-width: 28px;
   }
 }
+
+.filter-bar {
+  width: 100%;
+  max-width: 1400px;
+  padding: 0 24px 16px;
+  display: flex;
+  justify-content: center;
+}
+
+.group-filter {
+  padding: 10px 16px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  color: #ffffff;
+  font-size: 14px;
+  outline: none;
+  cursor: pointer;
+  min-width: 200px;
+  max-width: 100%;
+}
+
+.group-filter option {
+  background: #0a0e1a;
+  color: #ffffff;
+}
+
+.load-more-trigger {
+  width: 100%;
+  padding: 24px;
+  display: flex;
+  justify-content: center;
+}
+
+.loading-more {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: #94a3b8;
+}
+
+.spinner.small {
+  width: 24px;
+  height: 24px;
+  border-width: 3px;
+}

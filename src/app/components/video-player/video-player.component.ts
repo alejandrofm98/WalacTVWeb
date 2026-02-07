@@ -4,7 +4,6 @@ import {
   Component,
   ElementRef,
   inject,
-  Input,
   OnDestroy,
   OnInit,
   ViewChild,
@@ -12,16 +11,20 @@ import {
 } from '@angular/core';
 import {CommonModule} from '@angular/common';
 import {ActivatedRoute, Router} from '@angular/router';
-import {DataService} from '../../services/data.service';
+import {DataService, IptvChannel} from '../../services/data.service';
 import {PlayerStateService} from '../../services/player-state.service';
-import {Events} from '../../models';
 import {slugify} from '../../utils/slugify';
 import {NavbarComponent} from '../../shared/components/navbar-component/navbar.component';
-import {Channel} from '../../models/channel.model';
-import {Subscription} from 'rxjs';
 
-import mpegts from 'mpegts.js/dist/mpegts.js';
-import Hls from 'hls.js';
+
+declare const mpegts: any;
+
+interface StreamSource {
+  name: string;
+  url: string;
+  logo?: string;
+  group?: string;
+}
 
 @Component({
   selector: 'app-video-player',
@@ -32,17 +35,16 @@ import Hls from 'hls.js';
 })
 export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
   @ViewChild('videoElement') videoElement!: ElementRef<HTMLVideoElement>;
-  @Input() streamUrl: string = '';
-  @Input() eventTitle: string = 'Reproducción en vivo';
-  @Input() channel: Channel | null = null;
 
-  private player: any; // mpegts.js player
-  private hlsPlayer?: Hls; // hls.js player
+  streamUrl: string = '';
+  eventTitle: string = 'Reproducción en vivo';
+
+  private player: any;
+  private hlsPlayer: any;
   private shouldInitializePlayer = false;
   private dataService = inject(DataService);
   private playerState = inject(PlayerStateService);
   private cdr = inject(ChangeDetectorRef);
-  private castSubscription?: Subscription;
   private router = inject(Router);
 
   isPlaying = false;
@@ -51,20 +53,19 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
   showControls = true;
   private hideControlsTimeout?: number;
 
-  eventData?: Events;
   currentOriginalUrl: string = '';
   isChannelMode = false;
 
-  // Datos para navegación de canales
-  allChannels: Channel[] = [];
+  allChannels: IptvChannel[] = [];
   currentChannelIndex: number = -1;
   isFullscreen = false;
 
-  // Overlay de cambio de canal
   showChannelOverlay = false;
   private hideChannelOverlayTimeout?: number;
 
-  // Touch gestures para móvil
+  currentChannel: IptvChannel | null = null;
+  availableStreams: StreamSource[] = [];
+
   private touchStartX = 0;
   private touchStartY = 0;
   private touchEndX = 0;
@@ -99,7 +100,6 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
       doc.msFullscreenElement
     );
 
-    // Si salimos de fullscreen, desbloqueamos la orientación y mostramos navbar
     if (!this.isFullscreen) {
       this.unlockOrientation();
       this.showNavbar();
@@ -149,23 +149,14 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
       const slug = params.get('title');
       if (!slug) return;
 
-      const savedChannel = this.playerState.getChannel();
-      const savedEvent = this.playerState.getEvent();
+      const savedChannel = this.playerState.getChannel() as IptvChannel | null;
 
       if (savedChannel && slugify(savedChannel.nombre) === slug) {
-        this.channel = savedChannel;
+        this.currentChannel = savedChannel;
         this.isChannelMode = true;
         this.eventTitle = savedChannel.nombre;
         this.updateCurrentChannelIndex();
         this.loadStreamFromChannel();
-        return;
-      }
-
-      if (savedEvent && slugify(savedEvent.titulo) === slug) {
-        this.eventData = savedEvent;
-        this.isChannelMode = false;
-        this.eventTitle = savedEvent.titulo;
-        this.loadStreamFromEvent();
         return;
       }
 
@@ -174,30 +165,28 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   private loadAllChannels(): void {
-    this.dataService.getChannels().subscribe({
-      next: (data: any) => {
-        if (data?.items) {
-          const channels = Object.values(data.items) as Channel[];
-          this.allChannels = channels.sort((a, b) => a.numero - b.numero);
-          this.updateCurrentChannelIndex();
-          console.log('📺 Canales ordenados por número:', this.allChannels.length);
-        }
+    this.dataService.getChannels(0, 100).subscribe({
+      next: (response) => {
+        this.allChannels = response.items;
+        this.allChannels.sort((a, b) => (a.num || 0) - (b.num || 0));
+        this.updateCurrentChannelIndex();
+        console.log('📺 Canales cargados:', this.allChannels.length);
       },
       error: (error) => console.error('Error cargando canales:', error)
     });
   }
 
   private updateCurrentChannelIndex(): void {
-    if (this.channel && this.allChannels.length > 0) {
+    if (this.currentChannel && this.allChannels.length > 0) {
       this.currentChannelIndex = this.allChannels.findIndex(
-        c => c.numero === this.channel!.numero
+        c => c.id === this.currentChannel!.id
       );
     }
   }
 
   nextChannel(): void {
     if (!this.isChannelMode || this.allChannels.length === 0) return;
-    const currentIndex = this.allChannels.findIndex(c => c.numero === this.channel!.numero);
+    const currentIndex = this.allChannels.findIndex(c => c.id === this.currentChannel?.id);
     if (currentIndex === -1 || currentIndex >= this.allChannels.length - 1) return;
     const nextChannel = this.allChannels[currentIndex + 1];
     this.navigateToChannel(nextChannel);
@@ -205,17 +194,21 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
 
   previousChannel(): void {
     if (!this.isChannelMode || this.allChannels.length === 0) return;
-    const currentIndex = this.allChannels.findIndex(c => c.numero === this.channel!.numero);
+    const currentIndex = this.allChannels.findIndex(c => c.id === this.currentChannel?.id);
     if (currentIndex <= 0) return;
     const prevChannel = this.allChannels[currentIndex - 1];
     this.navigateToChannel(prevChannel);
   }
 
-  private navigateToChannel(channel: Channel): void {
-    this.channel = channel;
+  private navigateToChannel(channel: IptvChannel): void {
+    this.currentChannel = channel;
     this.eventTitle = channel.nombre;
-    this.currentChannelIndex = this.allChannels.findIndex(c => c.numero === channel.numero);
-    this.playerState.setChannel(channel);
+    this.currentChannelIndex = this.allChannels.findIndex(c => c.id === channel.id);
+
+    const savedChannel = this.playerState.getChannel() as IptvChannel | null;
+    if (savedChannel?.id !== channel.id) {
+      this.playerState.setChannel(channel);
+    }
 
     const slug = slugify(channel.nombre);
     this.router.navigate(['/player', slug], { replaceUrl: true });
@@ -233,69 +226,49 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   get hasPreviousChannel(): boolean {
-    if (!this.isChannelMode || this.allChannels.length === 0 || !this.channel) return false;
-    const currentIndex = this.allChannels.findIndex(c => c.numero === this.channel!.numero);
+    if (!this.isChannelMode || this.allChannels.length === 0 || !this.currentChannel) return false;
+    const currentIndex = this.allChannels.findIndex(c => c.id === this.currentChannel!.id);
     return currentIndex > 0;
   }
 
   get hasNextChannel(): boolean {
-    if (!this.isChannelMode || this.allChannels.length === 0 || !this.channel) return false;
-    const currentIndex = this.allChannels.findIndex(c => c.numero === this.channel!.numero);
+    if (!this.isChannelMode || this.allChannels.length === 0 || !this.currentChannel) return false;
+    const currentIndex = this.allChannels.findIndex(c => c.id === this.currentChannel!.id);
     return currentIndex !== -1 && currentIndex < this.allChannels.length - 1;
   }
 
   private loadFromBackend(slug: string) {
-    this.dataService.getChannels().subscribe({
-      next: (data) => {
-        if (data?.items) {
-          const channels = Object.values(data.items) as Channel[];
-          const foundChannel = channels.find((c: Channel) =>
-            slugify(c.nombre) === slug
-          );
-
-          if (foundChannel) {
-            this.channel = foundChannel;
-            this.isChannelMode = true;
-            this.eventTitle = foundChannel.nombre;
-            this.playerState.setChannel(foundChannel);
-            this.updateCurrentChannelIndex();
-            this.loadStreamFromChannel();
-            return;
-          }
-        }
-        this.loadEventFromBackend(slug);
-      },
-      error: () => this.loadEventFromBackend(slug)
-    });
-  }
-
-  private loadEventFromBackend(slug: string) {
-    this.dataService.getItems().subscribe({
-      next: (data) => {
-        if (!data?.eventos) return;
-
-        const foundEvent = data.eventos.find((e: Events) =>
-          slugify(e.titulo) === slug
+    this.dataService.getChannels(0, 100).subscribe({
+      next: (response) => {
+        const foundChannel = response.items.find(c =>
+          slugify(c.nombre) === slug
         );
 
-        if (foundEvent) {
-          this.eventData = foundEvent;
-          this.isChannelMode = false;
-          this.eventTitle = foundEvent.titulo;
-          this.playerState.setEvent(foundEvent);
-          this.loadStreamFromEvent();
+        if (foundChannel) {
+          this.currentChannel = foundChannel;
+          this.isChannelMode = true;
+          this.eventTitle = foundChannel.nombre;
+          this.playerState.setChannel(foundChannel);
+          this.updateCurrentChannelIndex();
+          this.loadStreamFromChannel();
         }
-      }
+      },
+      error: () => console.error('Canal no encontrado')
     });
   }
 
   private loadStreamFromChannel() {
-    if (!this.channel?.url) return;
+    if (!this.currentChannel?.id || !this.currentChannel.stream_url) return;
 
-    // Canales siempre aplican proxy
-    const finalUrl = this.getProxiedUrl(this.channel.url, true);
-    this.streamUrl = finalUrl;
-    this.currentOriginalUrl = finalUrl;
+    this.streamUrl = this.currentChannel.stream_url;
+    this.currentOriginalUrl = this.currentChannel.stream_url;
+    this.availableStreams = [{
+      name: this.currentChannel.nombre,
+      url: this.currentChannel.stream_url,
+      logo: this.currentChannel.logo,
+      group: this.currentChannel.grupo
+    }];
+
     this.shouldInitializePlayer = true;
 
     if (this.videoElement) {
@@ -318,14 +291,13 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   ngOnDestroy() {
-    // Destruir ambos reproductores
     if (this.player) {
       this.player.destroy();
       this.player = null;
     }
     if (this.hlsPlayer) {
       this.hlsPlayer.destroy();
-      this.hlsPlayer = undefined;
+      this.hlsPlayer = null;
     }
     if (this.hideControlsTimeout) {
       clearTimeout(this.hideControlsTimeout);
@@ -333,378 +305,152 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
     if (this.hideChannelOverlayTimeout) {
       clearTimeout(this.hideChannelOverlayTimeout);
     }
-    if (this.castSubscription) {
-      this.castSubscription.unsubscribe();
-    }
-    // Desbloquear orientación y mostrar navbar al destruir el componente
     this.unlockOrientation();
     this.showNavbar();
   }
 
-  // =========================
-  // MÉTODOS DE AYUDA (HELPERS)
-  // =========================
-
-  /**
-   * Normaliza una URL quitando protocolos y prefijos de proxy para poder compararlas.
-   */
-  private normalizeUrlForComparison(url: string): string {
-    if (!url) return '';
-
-    let clean = url;
-
-    // Remover formato antiguo de proxy
-    clean = clean.replace('iptv.walerike.com/stream-proxy/', '');
-
-    // Remover nuevo formato de proxy
-    if (clean.includes('walactv.walerike.com/proxy?url=')) {
-      try {
-        const urlParam = new URL(clean).searchParams.get('url');
-        if (urlParam) {
-          clean = urlParam;
-        } else {
-          clean = clean.replace(/.*walactv\.walerike\.com\/proxy\?url=/gi, '');
-        }
-      } catch {
-        clean = clean.replace(/.*walactv\.walerike\.com\/proxy\?url=/gi, '');
-      }
+  private initializePlayer() {
+    const video = this.videoElement?.nativeElement;
+    if (!video || !this.streamUrl) {
+      console.error('❌ Video element or stream URL not available');
+      return;
     }
 
-    // Quitamos protocolos (http/https)
-    clean = clean.replace(/^https?:\/\//, '');
+    const urlToUse = this.streamUrl;
+    console.log('🎬 Inicializando player con URL:', urlToUse);
 
-    return clean;
-  }
-
-  /**
-   * Determina si un enlace necesita pasar por el proxy de iptv.walerike.com
-   * Esto aplica para enlaces de Acestream/line.ultra-8k.xyz
-   */
-  private needsProxyTransform(url: string): boolean {
-    if (!url) return false;
-    const lowerUrl = url.toLowerCase();
-    // Solo aplicamos proxy para URLs de line.ultra-8k.xyz (acestream)
-    return lowerUrl.includes('line.ultra-8k.xyz');
-  }
-
-  /**
-   * Detecta si una URL ya tiene formato de proxy aplicado.
-   */
-  private isAlreadyProxied(url: string): boolean {
-    if (!url) return false;
-    return url.includes('walactv.walerike.com/proxy?url=') ||
-           url.includes('iptv.walerike.com/stream-proxy/');
-  }
-
-  /**
-   * Devuelve la URL transformada con el proxy si es necesario.
-   * @param url - URL original
-   * @param forceProxy - Forzar proxy (usado para canales)
-   */
-  private getProxiedUrl(url: string, forceProxy: boolean = false): string {
-    if (!url) return '';
-
-    // Si ya está proxificada (formato nuevo walactv o antiguo iptv), retornarla tal cual
-    if (this.isAlreadyProxied(url)) {
-      return url;
+    if (this.player) {
+      this.player.destroy();
+      this.player = null;
+    }
+    if (this.hlsPlayer) {
+      this.hlsPlayer.destroy();
+      this.hlsPlayer = null;
     }
 
-    // Si forzamos proxy (canales), aplicar transformación
-    if (forceProxy) {
-      return this.applyProxyTransform(url);
-    }
+    const wasPlaying = !video.paused;
+    const currentVolume = video.volume;
+    const wasMuted = video.muted;
 
-    // Si es una URL que necesita proxy (line.ultra-8k.xyz), aplicar transformación
-    if (this.needsProxyTransform(url)) {
-      return this.applyProxyTransform(url);
-    }
+    const urlLower = urlToUse.toLowerCase();
+    const isHLS = urlLower.includes('.m3u8');
+    const isMP4 = urlLower.includes('.mp4');
+    const isMKV = urlLower.includes('.mkv');
+    const isChannel = !isHLS && !isMP4 && !isMKV;
 
-    // En cualquier otro caso, devolver la URL sin modificar
-    return url;
-  }
-
-  /**
-   * Aplica la transformación de proxy a una URL.
-   */
-  private applyProxyTransform(url: string): string {
-    const cleanUrl = url.replace(/^https?:\/\//, '');
-    return `https://iptv.walerike.com/stream-proxy/${cleanUrl}`;
-  }
-
-  // =========================
-  // MÉTODOS PÚBLICOS PARA EL HTML
-  // =========================
-
-  /**
-   * Verifica si un valor es un array (usado en el template)
-   */
-  isArray(value: any): boolean {
-    return Array.isArray(value);
-  }
-
-  /**
-   * Convierte un valor a string[] para usar en *ngFor
-   */
-  asStringArray(value: any): string[] {
-    return Array.isArray(value) ? value : [];
-  }
-
-  /**
-   * Convierte un valor a string
-   */
-  asString(value: any): string {
-    return typeof value === 'string' ? value : '';
-  }
-
-  /**
-   * Se usa en el HTML para saber qué botón de calidad resaltar.
-   * Compara la URL "cruda" del botón con la URL "transformada" que se está reproduciendo.
-   */
-  isStreamActive(url: string): boolean {
-    return this.normalizeUrlForComparison(this.currentOriginalUrl) === this.normalizeUrlForComparison(url);
-  }
-
-  /**
-   * Se ejecuta al hacer clic en un botón de calidad.
-   * Recibe la URL cruda desde el HTML, la transforma y cambia el stream.
-   */
-  changeStream(url: string) {
-    // Transformamos la URL cruda usando la lógica de proxy
-    const finalUrl = this.getProxiedUrl(url, false);
-
-    this.currentOriginalUrl = finalUrl;
-    this.streamUrl = finalUrl;
-    this.initializePlayer();
-  }
-
-  get availableStreams(): string[] {
-    // Canales: Siempre proxy
-    if (this.isChannelMode && this.channel?.url) {
-      return [this.getProxiedUrl(this.channel.url, true)];
-    }
-
-    // Eventos: Proxy solo si es acestream
-    if (!this.isChannelMode && this.eventData?.enlaces) {
-      const streams: string[] = [];
-
-      this.eventData.enlaces.forEach(enlace => {
-        if (enlace.calidades && Array.isArray(enlace.calidades)) {
-          enlace.calidades.forEach(calidad => {
-            if (calidad.m3u8) {
-              streams.push(this.getProxiedUrl(calidad.m3u8, false));
-            }
-          });
-        } else if ((enlace as any).m3u8) {
-          const oldM3u8 = (enlace as any).m3u8;
-          if (Array.isArray(oldM3u8)) {
-            oldM3u8.forEach(u => streams.push(this.getProxiedUrl(u, false)));
-          } else {
-            streams.push(this.getProxiedUrl(oldM3u8, false));
+    // Wait for libraries to load
+    const waitForLibs = (): Promise<{ Hls: any; mpegts: any }> => {
+      return new Promise((resolve) => {
+        const checkInterval = setInterval(() => {
+          const Hls = (window as any).Hls;
+          const mpegts = (window as any).mpegts;
+          if (Hls || mpegts) {
+            clearInterval(checkInterval);
+            resolve({ Hls, mpegts });
           }
-        }
+        }, 100);
+        // Timeout after 5 seconds
+        setTimeout(() => {
+          clearInterval(checkInterval);
+          resolve({ Hls: (window as any).Hls, mpegts: (window as any).mpegts });
+        }, 5000);
       });
+    };
 
-      return streams;
-    }
-    return [];
-  }
+    waitForLibs().then(({ Hls, mpegts }) => {
+      console.log('🎬 Libraries loaded:', { Hls: !!Hls, mpegts: !!mpegts });
 
-  get streamSectionTitle(): string {
-    if (this.isChannelMode && this.channel) {
-      return this.channel.nombre;
-    }
+      let playerInitialized = false;
 
-    if (!this.isChannelMode && this.eventData?.enlaces?.length) {
-      const currentNormalized = this.normalizeUrlForComparison(this.currentOriginalUrl);
-
-      for (const enlace of this.eventData.enlaces) {
-        if (enlace.calidades) {
-           const foundInCalidad = enlace.calidades.find(c => this.normalizeUrlForComparison(c.m3u8) === currentNormalized);
-           if (foundInCalidad) return enlace.canal || 'Stream';
-        }
-        // Fallback estructura antigua
-        if ((enlace as any).m3u8) {
-           const oldM3u8 = (enlace as any).m3u8;
-           const oldLinks = Array.isArray(oldM3u8) ? oldM3u8 : [oldM3u8];
-           if (oldLinks.some(l => this.normalizeUrlForComparison(l) === currentNormalized)) {
-             return enlace.canal || 'Stream';
-           }
-        }
-      }
-      return this.eventData.enlaces[0].canal || 'Stream';
-    }
-
-    return 'Stream';
-  }
-
-  private loadStreamFromEvent() {
-    if (!this.eventData?.enlaces || this.eventData.enlaces.length === 0) return;
-
-    const firstLink = this.eventData.enlaces[0];
-
-    if (firstLink.calidades && firstLink.calidades.length > 0) {
-      const firstQualityUrl = firstLink.calidades[0].m3u8;
-      if (firstQualityUrl) {
-        const finalUrl = this.getProxiedUrl(firstQualityUrl, false);
-
-        this.currentOriginalUrl = finalUrl;
-        this.streamUrl = finalUrl;
-        this.shouldInitializePlayer = true;
-        this.cdr.detectChanges();
-
-        if (this.videoElement) {
-          this.initializePlayer();
-        }
-        return;
-      }
-    }
-
-    // Fallback estructura antigua
-    const fallbackUrl = (firstLink as any).m3u8;
-    if (fallbackUrl) {
-        const urlToUse = Array.isArray(fallbackUrl) ? fallbackUrl[0] : fallbackUrl;
-        const finalUrl = this.getProxiedUrl(urlToUse, false);
-
-        this.currentOriginalUrl = finalUrl;
-        this.streamUrl = finalUrl;
-        this.shouldInitializePlayer = true;
-        this.cdr.detectChanges();
-        if (this.videoElement) {
-          this.initializePlayer();
-        }
-    }
-  }
-
-  // Reemplaza el método initializePlayer() con esta versión mejorada:
-
-// Reemplaza el método initializePlayer() con esta versión mejorada:
-
-private initializePlayer() {
-  const video = this.videoElement?.nativeElement;
-  if (!video) return;
-
-  const urlToUse = this.streamUrl;
-  if (!urlToUse) return;
-
-  // GUARDAR el estado actual del audio ANTES de destruir el player
-  const wasPlaying = !video.paused;
-  const currentVolume = video.volume;
-  const wasMuted = video.muted;
-
-  // Destruir players anteriores
-  if (this.player) {
-    this.player.destroy();
-    this.player = null;
-  }
-  if (this.hlsPlayer) {
-    this.hlsPlayer.destroy();
-    this.hlsPlayer = undefined;
-  }
-
-  // Determinar si la URL es HLS (.m3u8) o MPEG-TS
-  const isHLS = urlToUse.toLowerCase().includes('.m3u8');
-
-  if (isHLS) {
-    console.log('🎬 Reproduciendo HLS');
-
-    if (Hls.isSupported()) {
-      console.log('✅ Usando HLS.js');
-
-      this.hlsPlayer = new Hls({
-        enableWorker: true,
-        lowLatencyMode: true,
-        backBufferLength: 90,
-        debug: false
-      });
-
-      this.hlsPlayer.loadSource(urlToUse);
-      this.hlsPlayer.attachMedia(video);
-
-      this.hlsPlayer.on(Hls.Events.MANIFEST_PARSED, () => {
-        console.log('✅ Manifest HLS cargado correctamente');
-
-        // RESTAURAR el estado del audio ANTES de reproducir
-        video.volume = currentVolume;
-        video.muted = wasMuted;
-
-        // Si ya estaba reproduciendo (cambio de canal), reproducir directamente
-        if (wasPlaying) {
-          video.play().then(() => {
-            console.log('✅ Reproducción iniciada manteniendo audio');
-          }).catch((error) => {
-            console.log('Error al reproducir:', error);
-          });
-        } else {
-          // Primera carga: intentar autoplay
-          video.play().catch((error) => {
-            console.log('Autoplay bloqueado:', error);
-            video.muted = true;
-            video.play().catch(() => {
-              console.log('Autoplay requiere interacción del usuario');
-            });
-          });
-        }
-      });
-
-      this.hlsPlayer.on(Hls.Events.ERROR, (event, data) => {
-        console.error('HLS.js error:', data);
-        if (data.fatal) {
-          switch (data.type) {
-            case Hls.ErrorTypes.NETWORK_ERROR:
-              console.log('❌ Error de red fatal, intentando recuperar...');
-              this.hlsPlayer?.startLoad();
-              break;
-            case Hls.ErrorTypes.MEDIA_ERROR:
-              console.log('❌ Error de medio fatal, intentando recuperar...');
-              this.hlsPlayer?.recoverMediaError();
-              break;
-            default:
-              console.error('❌ Error fatal no recuperable, destruyendo player');
-              this.hlsPlayer?.destroy();
-              this.hlsPlayer = undefined;
-              break;
-          }
-        }
-      });
-
-    } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-      console.log('✅ Usando reproducción nativa de HLS (Safari)');
-
-      // RESTAURAR el estado del audio ANTES de cargar
-      video.volume = currentVolume;
-      video.muted = wasMuted;
-
-      video.src = urlToUse;
-      video.load();
-
-      // Si ya estaba reproduciendo (cambio de canal), reproducir directamente
-      if (wasPlaying) {
-        video.play().then(() => {
-          console.log('✅ Reproducción iniciada manteniendo audio');
-        }).catch((error) => {
-          console.log('Error al reproducir:', error);
-        });
+      if (isHLS && Hls && Hls.isSupported()) {
+        console.log('🎬 Usando HLS.js');
+        playerInitialized = true;
+        this.initHlsPlayer(video, urlToUse, wasPlaying, wasMuted);
+      } else if (isChannel && mpegts && mpegts.isSupported()) {
+        console.log('🎬 Usando MPEG-TS (mpegts.js)');
+        playerInitialized = true;
+        this.initMpegtsPlayer(video, urlToUse, wasPlaying, wasMuted);
+      } else if ((isMP4 || isMKV) && (video.canPlayType('video/mp4') || video.canPlayType('video/webm'))) {
+        console.log('🎬 Usando video nativo (MP4/MKV)');
+        playerInitialized = true;
+        video.src = urlToUse;
+        video.load();
+        this.playVideo(video, wasPlaying, wasMuted);
+      } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+        console.log('🎬 Usando HLS nativo (Safari)');
+        playerInitialized = true;
+        video.src = urlToUse;
+        video.load();
+        this.playVideo(video, wasPlaying, wasMuted);
+      } else if (mpegts && mpegts.isSupported()) {
+        console.log('🎬 Usando MPEG-TS como fallback');
+        playerInitialized = true;
+        this.initMpegtsPlayer(video, urlToUse, wasPlaying, wasMuted);
       } else {
-        // Primera carga: intentar autoplay
-        video.play().catch((error) => {
-          console.log('Autoplay bloqueado:', error);
-          video.muted = true;
-          video.play().catch(() => {
-            console.log('Autoplay requiere interacción del usuario');
-          });
-        });
+        console.warn('⚠️ Navegador no soporta formatos');
+        playerInitialized = true;
+        video.src = urlToUse;
+        video.load();
+        this.playVideo(video, wasPlaying, wasMuted);
       }
-    }
+
+      if (!playerInitialized) {
+        console.error('❌ No se pudo inicializar ningún player');
+      }
+    });
 
     this.setupVideoEventListeners(video);
+  }
 
-  } else if (mpegts.isSupported()) {
-    console.log('🎬 Reproduciendo MPEG-TS con mpegts.js');
+  private initHlsPlayer(video: HTMLVideoElement, url: string, wasPlaying: boolean, wasMuted: boolean): void {
+    const Hls = (window as any).Hls;
+
+    this.hlsPlayer = new Hls({
+      enableWorker: true,
+      lowLatencyMode: true,
+      backBufferLength: 90,
+      debug: false
+    });
+
+    this.hlsPlayer.loadSource(url);
+    this.hlsPlayer.attachMedia(video);
+
+    this.hlsPlayer.on(Hls.Events.MANIFEST_PARSED, () => {
+      console.log('✅ HLS manifest parsed');
+      video.volume = video.volume;
+      video.muted = wasMuted;
+      this.playVideo(video, wasPlaying, wasMuted);
+    });
+
+    this.hlsPlayer.on(Hls.Events.ERROR, (event: any, data: any) => {
+      console.error('❌ HLS error:', data);
+      if (data.fatal) {
+        switch (data.type) {
+          case Hls.ErrorTypes.NETWORK_ERROR:
+            console.log('🔄 HLS network error, retrying...');
+            this.hlsPlayer?.startLoad();
+            break;
+          case Hls.ErrorTypes.MEDIA_ERROR:
+            console.log('🔄 HLS media error, recovering...');
+            this.hlsPlayer?.recoverMediaError();
+            break;
+          default:
+            console.log('🛑 HLS fatal error');
+            this.hlsPlayer?.destroy();
+            this.hlsPlayer = null;
+            break;
+        }
+      }
+    });
+  }
+
+  private initMpegtsPlayer(video: HTMLVideoElement, url: string, wasPlaying: boolean, wasMuted: boolean): void {
+    const mpegts = (window as any).mpegts;
 
     this.player = mpegts.createPlayer({
       type: 'mpegts',
       isLive: true,
-      url: urlToUse,
+      url: url,
       enableWorker: true,
       liveBufferLatencyChasing: true,
       lazyLoad: false,
@@ -713,60 +459,31 @@ private initializePlayer() {
     });
 
     this.player.on(mpegts.Events.ERROR, (type: any, detail: any) => {
-      console.error('mpegts.js error:', type, detail);
-      this.handlePlayerError(type, detail);
+      console.error('❌ MPEG-TS error:', type, detail);
+    });
+
+    this.player.on(mpegts.Events.LOADING_COMPLETE, () => {
+      console.log('✅ MPEG-TS loaded');
     });
 
     this.player.attachMediaElement(video);
     this.player.load();
-
-    // RESTAURAR el estado del audio ANTES de reproducir
-    video.volume = currentVolume;
+    video.volume = video.volume;
     video.muted = wasMuted;
+    this.playVideo(video, wasPlaying, wasMuted);
+  }
 
-    // Si ya estaba reproduciendo (cambio de canal), reproducir directamente
+  private playVideo(video: HTMLVideoElement, wasPlaying: boolean, wasMuted: boolean): void {
     if (wasPlaying) {
-      this.player.play().then(() => {
-        console.log('✅ Reproducción iniciada manteniendo audio');
-      }).catch((error: any) => {
-        console.log('Error al reproducir:', error);
-      });
+      video.play().catch(() => {});
     } else {
-      // Primera carga: intentar autoplay
-      this.player.play().catch((error: any) => {
-        console.log('Autoplay bloqueado:', error);
+      video.play().catch(() => {
         video.muted = true;
-        this.player.play().catch(() => {
-          console.log('Autoplay requiere interacción del usuario');
-        });
+        video.play().catch(() => {});
       });
     }
-
-    this.setupVideoEventListeners(video);
-  }
-}
-
-  /**
-   * Maneja errores del player de mpegts.js.
-   */
-  private handlePlayerError(type: any, detail: any): void {
-    console.log('Player error handler:', type, detail);
-
-    // Error de red o CORS
-    if (type === 'networkError' || type === 'network') {
-      console.log('Posible error de red o CORS, verificando URL...');
-      // Aquí podrías implementar reintentos o cambiar de URL
-    }
-
-    // Error de medio
-    if (type === 'mediaError' || type === 'media') {
-      console.log('Error en el medio de reproducción');
-    }
   }
 
-  /**
-   * Configura los event listeners del elemento de video.
-   */
   private setupVideoEventListeners(video: HTMLVideoElement): void {
     video.addEventListener('play', () => {
       this.isPlaying = true;
@@ -793,7 +510,45 @@ private initializePlayer() {
     });
 
     video.addEventListener('error', (e) => {
-      console.error('Error en el elemento de video:', e);
+      console.error('❌ Error en el elemento de video:', e);
+      const mpegtsLib = (window as any).mpegts;
+      console.error('❌ Video error details:', {
+        src: video.src,
+        currentSrc: video.currentSrc,
+        error: video.error ? {
+          code: video.error.code,
+          message: video.error.message
+        } : null,
+        networkState: video.networkState,
+        readyState: video.readyState,
+        mpegtsSupported: mpegtsLib?.isSupported()
+      });
+
+      // Retry with mpegts if native failed and not already using it
+      if (!this.player && mpegtsLib?.isSupported()) {
+        console.log('🔄 Reintentando con mpegts.js...');
+        const urlToUse = this.streamUrl;
+        try {
+          this.player = mpegtsLib.createPlayer({
+            type: 'mpegts',
+            isLive: true,
+            url: urlToUse,
+            enableWorker: true,
+            liveBufferLatencyChasing: true,
+            lazyLoad: false,
+            enableStashBuffer: false,
+            stashInitialSize: 128
+          });
+          this.player.on(mpegtsLib.Events.ERROR, (type: any, detail: any) => {
+            console.error('❌ mpegts.js retry error:', type, detail);
+          });
+          this.player.attachMediaElement(video);
+          this.player.load();
+          console.log('✅mpegts.js iniciado correctamente');
+        } catch (err) {
+          console.error('❌ Error iniciando mpegts.js:', err);
+        }
+      }
     });
   }
 
@@ -819,7 +574,6 @@ private initializePlayer() {
     }
   }
 
-  // Método auxiliar para ocultar el navbar
   private hideNavbar(): void {
     const navbar = document.querySelector('app-navbar') as HTMLElement;
     if (navbar) {
@@ -827,11 +581,10 @@ private initializePlayer() {
     }
   }
 
-  // Método auxiliar para mostrar el navbar
   private showNavbar(): void {
     const navbar = document.querySelector('app-navbar') as HTMLElement;
     if (navbar) {
-      navbar.style.display = ''; // Restaura el estilo original del CSS
+      navbar.style.display = '';
     }
   }
 
@@ -848,7 +601,6 @@ private initializePlayer() {
       doc.msFullscreenElement;
 
     if (!isInFullscreen) {
-      // Ocultar navbar antes de entrar en fullscreen
       this.hideNavbar();
 
       if (elem.requestFullscreen) elem.requestFullscreen();
@@ -856,10 +608,8 @@ private initializePlayer() {
       else if (elem.mozRequestFullScreen) elem.mozRequestFullScreen();
       else if (elem.msRequestFullscreen) elem.msRequestFullscreen();
 
-      // Después intentamos bloquear la orientación a landscape
       this.lockToLandscape();
     } else {
-      // Primero desbloqueamos la orientación
       this.unlockOrientation();
 
       if (doc.exitFullscreen) doc.exitFullscreen();
@@ -869,12 +619,7 @@ private initializePlayer() {
     }
   }
 
-  /**
-   * Bloquea la orientación de la pantalla en modo landscape (horizontal)
-   * Requiere HTTPS y debe llamarse desde un gesto del usuario
-   */
   private lockToLandscape(): void {
-    // Verificar si la API de Screen Orientation está disponible
     if (this.isOrientationLockSupported()) {
       const screenOrientation = (screen as any).orientation;
 
@@ -888,9 +633,6 @@ private initializePlayer() {
     }
   }
 
-  /**
-   * Desbloquea la orientación de la pantalla
-   */
   private unlockOrientation(): void {
     if (this.isOrientationLockSupported()) {
       (screen as any).orientation.unlock();
@@ -898,9 +640,6 @@ private initializePlayer() {
     }
   }
 
-  /**
-   * Verifica si la API de Screen Orientation está disponible
-   */
   private isOrientationLockSupported(): boolean {
     return !!(
       typeof screen !== 'undefined' &&
@@ -927,24 +666,9 @@ private initializePlayer() {
     }
   }
 
-  changeChannelStream(index: number) {
-    if (!this.isChannelMode && this.eventData?.enlaces?.[index]) {
-      const targetLink = this.eventData.enlaces[index];
-      let newUrl = '';
-
-      if (targetLink.calidades && targetLink.calidades.length > 0) {
-        newUrl = targetLink.calidades[0].m3u8;
-      } else if ((targetLink as any).m3u8) {
-         const oldM3u8 = (targetLink as any).m3u8;
-         newUrl = Array.isArray(oldM3u8) ? oldM3u8[0] : oldM3u8;
-      }
-
-      if (newUrl) {
-        const finalUrl = this.getProxiedUrl(newUrl, false);
-        this.streamUrl = finalUrl;
-        this.currentOriginalUrl = finalUrl;
-        this.initializePlayer();
-      }
-    }
+  changeStream(stream: StreamSource) {
+    this.streamUrl = stream.url;
+    this.currentOriginalUrl = stream.url;
+    this.initializePlayer();
   }
 }

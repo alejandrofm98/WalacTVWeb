@@ -1,14 +1,13 @@
 <app-navbar></app-navbar>
 
 <div class="player-wrapper">
-  <!-- Título y número de canal -->
   <div class="header-info">
-    <div class="channel-number-badge" *ngIf="channel?.numero">
-      {{ channel?.numero }}
+    <div class="channel-number-badge" *ngIf="currentChannel?.num">
+      {{ currentChannel?.num }}
     </div>
     <h1 class="event-title">{{ eventTitle }}</h1>
-    <div class="channel-group-badge" *ngIf="channel?.grupo">
-      {{ channel?.grupo }}
+    <div class="channel-group-badge" *ngIf="currentChannel?.grupo">
+      {{ currentChannel?.grupo }}
     </div>
   </div>
 
@@ -26,17 +25,15 @@
       data-setup="{}">
     </video>
 
-    <!-- Overlay de cambio de canal (solo en fullscreen) -->
     <div class="channel-overlay" [class.visible]="showChannelOverlay && isFullscreen">
       <div class="channel-overlay-content">
-        <div class="channel-overlay-number" *ngIf="channel?.numero">{{ channel?.numero }}</div>
+        <div class="channel-overlay-number" *ngIf="currentChannel?.num">{{ currentChannel?.num }}</div>
         <div class="channel-overlay-icon">📺</div>
-        <div class="channel-overlay-name">{{ channel?.nombre }}</div>
-        <div class="channel-overlay-group">{{ channel?.grupo }}</div>
+        <div class="channel-overlay-name">{{ currentChannel?.nombre }}</div>
+        <div class="channel-overlay-group">{{ currentChannel?.grupo }}</div>
       </div>
     </div>
 
-    <!-- Indicador de swipe para móviles en fullscreen -->
     <div class="swipe-indicator" *ngIf="isChannelMode && isFullscreen"
          [class.show-controls]="showControls">
       <div class="swipe-hint swipe-hint-left">
@@ -49,7 +46,6 @@
       </div>
     </div>
 
-    <!-- Flechas de navegación -->
     <div class="channel-navigation" *ngIf="isChannelMode && !isFullscreen">
       <button
         class="nav-arrow nav-arrow-left"
@@ -71,7 +67,6 @@
     <div class="controls" [class.visible]="showControls">
       <div class="controls-wrapper">
         <div class="controls-left">
-          <!-- Botón Play/Pause -->
           <button
             class="control-button play-button"
             (click)="togglePlayPause()"
@@ -114,44 +109,16 @@
     </div>
   </div>
 
-  <!-- Sección de opciones por canal (solo eventos) -->
-  <div class="channel-options" *ngIf="!isChannelMode && eventData?.enlaces?.length">
-    <div class="channel-section" *ngFor="let enlace of eventData?.enlaces; let i = index">
-      <h3 class="channel-title">{{ enlace.canal }}</h3>
-
-      <!-- Nuevo formato: con calidades array -->
-      <div class="options-row" *ngIf="enlace.calidades && enlace.calidades.length > 0">
+  <div class="channel-options" *ngIf="availableStreams.length > 1">
+    <div class="channel-section" *ngFor="let stream of availableStreams">
+      <h3 class="channel-title">{{ stream.name }}</h3>
+      <div class="options-row">
         <button
-          *ngFor="let calidad of enlace.calidades"
           class="option-button"
-          [class.active]="isStreamActive(calidad.m3u8)"
-          (click)="changeStream(calidad.m3u8)">
-          {{ calidad.calidad }}
+          [class.active]="stream.url === currentOriginalUrl"
+          (click)="changeStream(stream)">
+          {{ stream.name }}
         </button>
-      </div>
-
-      <!-- Formato antiguo: m3u8 directo (string o array) -->
-      <div class="options-row" *ngIf="!enlace.calidades && enlace.m3u8">
-        <!-- Si m3u8 es un array -->
-        <ng-container *ngIf="isArray(enlace.m3u8)">
-          <button
-            *ngFor="let url of asStringArray(enlace.m3u8); let j = index"
-            class="option-button"
-            [class.active]="isStreamActive(url)"
-            (click)="changeStream(url)">
-            Opción {{ j + 1 }}
-          </button>
-        </ng-container>
-
-        <!-- Si m3u8 es un string único -->
-        <ng-container *ngIf="!isArray(enlace.m3u8)">
-          <button
-            class="option-button"
-            [class.active]="isStreamActive(asString(enlace.m3u8))"
-            (click)="changeStream(asString(enlace.m3u8))">
-            Ver Stream
-          </button>
-        </ng-container>
       </div>
     </div>
   </div>

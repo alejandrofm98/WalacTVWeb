@@ -1,9 +1,8 @@
-// login.component.ts
-import {Component} from '@angular/core';
+import {Component, OnInit} from '@angular/core';
 import {CommonModule} from '@angular/common';
 import {FormsModule} from '@angular/forms';
 import {Router} from '@angular/router';
-import {AuthService, SessionData} from '../../services/auth.service';
+import {AuthService} from '../../services/auth.service';
 
 @Component({
   selector: 'app-login',
@@ -12,16 +11,14 @@ import {AuthService, SessionData} from '../../services/auth.service';
   templateUrl: './login.component.html',
   styleUrls: ['./login.component.css']
 })
-export class LoginComponent {
+export class LoginComponent implements OnInit {
   email: string = '';
   password: string = '';
   loading: boolean = false;
   errorMessage: string = '';
 
-  // Para el modal de confirmación
   showSessionModal: boolean = false;
-  activeSessionInfo: SessionData | null = null;
-  pendingCredentials: { email: string, password: string } | null = null;
+  pendingCredentials: { username: string, password: string } | null = null;
 
   constructor(
     private authService: AuthService,
@@ -30,12 +27,14 @@ export class LoginComponent {
   }
 
   ngOnInit(): void {
-    // 🔥 Agregar clase al body para excluir el padding
     document.body.classList.add('login-page');
+
+    if (this.authService.isAuthenticated()) {
+      this.router.navigate(['/']);
+    }
   }
 
   ngOnDestroy(): void {
-    // 🔥 Remover clase al salir del componente
     document.body.classList.remove('login-page');
   }
 
@@ -52,82 +51,35 @@ export class LoginComponent {
       const result = await this.authService.login(this.email, this.password);
 
       if (result.success) {
-        // Login exitoso - redirigir a events-list
-        console.log('✅ Login exitoso', result.user);
-        await this.router.navigate(['/']); // Usa await para asegurar la navegación
+        console.log('✅ Login exitoso');
+        await this.router.navigate(['/']);
         console.log('✅ Navegación completada');
-      } else if (result.requiresConfirmation) {
-        // Hay una sesión activa, mostrar modal
-        this.showSessionModal = true;
-        this.activeSessionInfo = result.activeSession;
-        this.pendingCredentials = {
-          email: this.email,
-          password: this.password
-        };
+      } else {
+        this.errorMessage = result.message || 'Error al iniciar sesión';
       }
     } catch (error: any) {
       console.error('❌ Error en login:', error);
-      this.errorMessage = this.getErrorMessage(error.code);
+      this.errorMessage = this.getErrorMessage(error);
     } finally {
       this.loading = false;
-    }
-  }
-
-  async confirmForceLogin() {
-    if (!this.pendingCredentials) return;
-
-    this.loading = true;
-    this.showSessionModal = false;
-
-    try {
-      const result = await this.authService.login(
-        this.pendingCredentials.email,
-        this.pendingCredentials.password,
-        true // forceLogin = true
-      );
-
-      if (result.success) {
-        console.log('✅ Login forzado exitoso', result.user);
-        await this.router.navigate(['/']); // Usa await para asegurar la navegación
-        console.log('✅ Navegación completada');
-      }
-    } catch (error: any) {
-      console.error('❌ Error en login forzado:', error);
-      this.errorMessage = this.getErrorMessage(error.code);
-    } finally {
-      this.loading = false;
-      this.pendingCredentials = null;
     }
   }
 
   cancelForceLogin() {
     this.showSessionModal = false;
     this.pendingCredentials = null;
-    this.activeSessionInfo = null;
   }
 
-  getErrorMessage(errorCode: string): string {
-    const errors: { [key: string]: string } = {
-      'auth/invalid-email': 'El correo electrónico no es válido',
-      'auth/user-disabled': 'Esta cuenta ha sido deshabilitada',
-      'auth/user-not-found': 'No existe una cuenta con este correo',
-      'auth/wrong-password': 'Contraseña incorrecta',
-      'auth/too-many-requests': 'Demasiados intentos. Intenta más tarde',
-      'auth/network-request-failed': 'Error de conexión. Verifica tu internet'
-    };
-
-    return errors[errorCode] || 'Error al iniciar sesión. Intenta de nuevo';
-  }
-
-  formatDate(timestamp: number): string {
-    return new Date(timestamp).toLocaleString('es-ES');
-  }
-
-  getDeviceInfo(userAgent: string): string {
-    if (userAgent.includes('Mobile')) return 'Dispositivo móvil';
-    if (userAgent.includes('Chrome')) return 'Chrome';
-    if (userAgent.includes('Firefox')) return 'Firefox';
-    if (userAgent.includes('Safari')) return 'Safari';
-    return 'Navegador desconocido';
+  getErrorMessage(error: any): string {
+    if (error?.status === 401) {
+      return 'Usuario o contraseña incorrectos';
+    }
+    if (error?.status === 429) {
+      return 'Límite de dispositivos alcanzado';
+    }
+    if (error?.status === 403) {
+      return 'Cuenta desactivada o sin permisos';
+    }
+    return 'Error al iniciar sesión. Intenta de nuevo';
   }
 }

@@ -45,3 +45,4 @@ Thumbs.db
 /src/environments/.env
 !/docker/.env
 !/src/environments/.env
+/docker/.env

@@ -1,0 +1,102 @@
+<app-navbar></app-navbar>
+<div class="app-container">
+  <header>
+    <h1>IPTV Admin Panel</h1>
+    <p>Gestión de usuarios y estadísticas</p>
+  </header>
+
+  <div class="stats">
+    <div class="stat-card">
+      <div class="stat-value">{{ totalUsers }}</div>
+      <div class="stat-label">Total Usuarios</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value">{{ activeUsers }}</div>
+      <div class="stat-label">Usuarios Activos</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value">{{ totalSessions }}</div>
+      <div class="stat-label">Sesiones Activas</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value">{{ totalChannels }}</div>
+      <div class="stat-label">Canales</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value">{{ totalMovies }}</div>
+      <div class="stat-label">Películas</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value">{{ totalSeries }}</div>
+      <div class="stat-label">Series</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+      <h2>Usuarios</h2>
+      <div style="display: flex; gap: 10px;">
+        <button class="btn btn-secondary" (click)="reloadTemplate()">Recargar Template</button>
+        <button class="btn btn-primary" (click)="openAddUser()">+ Nuevo Usuario</button>
+      </div>
+    </div>
+
+    <table id="usersTable">
+      <thead>
+        <tr>
+          <th>Username</th>
+          <th>Estado</th>
+          <th>Max Conexiones</th>
+          <th>Creado</th>
+          <th>Acciones</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr *ngFor="let user of users">
+          <td>{{ user.username }}</td>
+          <td><span [style.color]="user.is_active ? '#10b981' : '#ef4444'">{{ user.is_active ? 'Activo' : 'Inactivo' }}</span></td>
+          <td>{{ user.max_connections }}</td>
+          <td>{{ formatDate(user.created_at) }}</td>
+          <td>
+            <button class="btn btn-primary" style="padding: 5px 10px; font-size: 12px; margin-right: 5px;" (click)="showPlaylist(user.username)">Ver M3U</button>
+            <button class="btn btn-danger" style="padding: 5px 10px; font-size: 12px;" (click)="deleteUser(user.id)">Eliminar</button>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="modal" [class.active]="showAddUser">
+    <div class="modal-content">
+      <h2 style="margin-bottom: 20px;">Crear Usuario</h2>
+      <div class="form-group">
+        <label>Username</label>
+        <input [(ngModel)]="newUsername" placeholder="nombre_usuario" />
+      </div>
+      <div class="form-group">
+        <label>Password</label>
+        <input type="password" [(ngModel)]="newPassword" placeholder="contraseña" />
+      </div>
+      <div class="form-group">
+        <label>Max Conexiones Simultáneas</label>
+        <input type="number" [(ngModel)]="newMaxConnections" min="1" />
+      </div>
+      <div style="display: flex; gap: 10px; margin-top: 20px;">
+        <button class="btn btn-success" (click)="createUser()">Crear</button>
+        <button class="btn" (click)="closeModal()" style="background: #475569;">Cancelar</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal" [class.active]="showPlaylistModal">
+    <div class="modal-content">
+      <h2 style="margin-bottom: 20px;">URL Playlist M3U</h2>
+      <div class="playlist-url" style="margin-bottom: 10px; word-break: break-all;">{{ playlistUrl }}</div>
+      <p style="margin-top: 0; color: #94a3b8; font-size: 14px;">
+        Usa esta URL en tu app IPTV (TiviMate, VLC, etc.)
+      </p>
+      <button class="btn btn-primary" (click)="copyPlaylistUrl()" style="margin-top: 10px;">Copiar URL</button>
+      <button class="btn" (click)="closeModal()" style="background: #475569; margin-top: 10px; margin-left: 10px;">Cerrar</button>
+    </div>
+  </div>
+</div>

@@ -15,12 +15,18 @@
     </div>
   </div>
 
-  <!-- Grupos de canales -->
+  <div class="filter-bar" *ngIf="groups.length > 0">
+    <select [(ngModel)]="selectedGroup" (change)="onGroupFilterChange()" class="group-filter">
+      <option value="">Todos los grupos</option>
+      <option *ngFor="let group of groups" [value]="group">{{ group }}</option>
+    </select>
+  </div>
+
   <div class="groups-wrapper">
     <div *ngFor="let group of groupedChannels" class="channel-group">
       <div class="group-header" (click)="toggleGroup(group)">
         <div class="group-info">
-          <h2 class="group-title">{{ group.grupo }}</h2>
+          <h2 class="group-title">{{ group.name }}</h2>
           <span class="group-count">{{ group.channels.length }} canales</span>
         </div>
         <span class="toggle-icon" [class.expanded]="group.expanded">
@@ -33,7 +39,7 @@
           *ngFor="let channel of group.channels"
           class="channel-card"
           (click)="onChannelClick(channel)">
-          <div class="channel-number">{{ channel.numero }}</div>
+          <div class="channel-number">{{ channel.num }}</div>
           <div class="channel-logo">
             <img [src]="channel.logo" [alt]="channel.nombre" />
           </div>
@@ -45,7 +51,14 @@
     </div>
   </div>
 
-  <div *ngIf="totalChannels === 0" class="no-results">
+  <div #loadMoreTrigger class="load-more-trigger" *ngIf="hasMore">
+    <div *ngIf="loading" class="loading-more">
+      <div class="spinner small"></div>
+      <span>Cargando más canales...</span>
+    </div>
+  </div>
+
+  <div *ngIf="totalChannels === 0 && !loading" class="no-results">
     <p>No se encontraron canales</p>
   </div>
 </div>

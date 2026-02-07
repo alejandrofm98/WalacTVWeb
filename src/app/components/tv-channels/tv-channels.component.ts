@@ -1,16 +1,15 @@
-import {Component, OnInit} from '@angular/core';
+import {Component, OnInit, inject, ElementRef, ViewChild, AfterViewInit} from '@angular/core';
 import {CommonModule} from '@angular/common';
 import {FormsModule} from '@angular/forms';
 import {Router} from '@angular/router';
-import {DataService} from '../../services/data.service';
+import {DataService, IptvChannel, PaginatedResponse} from '../../services/data.service';
 import {PlayerStateService} from '../../services/player-state.service';
-import {Channel} from '../../models/channel.model';
 import {slugify} from '../../utils/slugify';
 import {NavbarComponent} from '../../shared/components/navbar-component/navbar.component';
 
 interface ChannelGroup {
-  grupo: string;
-  channels: Channel[];
+  name: string;
+  channels: IptvChannel[];
   expanded: boolean;
 }
 
@@ -21,82 +20,140 @@ interface ChannelGroup {
   templateUrl: './tv-channels.component.html',
   styleUrls: ['./tv-channels.component.css']
 })
-export class TvChannelsComponent implements OnInit {
-  channels: Channel[] = [];
+export class TvChannelsComponent implements OnInit, AfterViewInit {
+  @ViewChild('loadMoreTrigger') loadMoreTrigger!: ElementRef;
+
+  channels: IptvChannel[] = [];
   groupedChannels: ChannelGroup[] = [];
   searchTerm: string = '';
+  groups: string[] = [];
+  selectedGroup: string = '';
 
-  constructor(
-    private dataService: DataService,
-    private playerState: PlayerStateService,
-    private router: Router
-  ) {
-  }
+  loading = false;
+  skip = 0;
+  limit = 100;
+  total = 0;
+  hasMore = true;
+
+  private dataService = inject(DataService);
+  private playerState = inject(PlayerStateService);
+  private router = inject(Router);
+  private observer: IntersectionObserver | null = null;
 
   ngOnInit(): void {
     console.log('📺 Componente TV Channels iniciado');
     this.loadChannels();
+    this.loadGroups();
   }
 
-  loadChannels(): void {
-    this.dataService.getChannels().subscribe({
-      next: (data: any) => {
-        if (data && data["items"]) {
-          // Convertir el objeto a array
-          this.channels = Object.values(data["items"]) as Channel[];
-          this.groupChannels();
-          console.log('✅ Canales cargados:', this.channels);
-          console.log('✅ Grupos creados:', this.groupedChannels);
-        } else {
-          console.log('⚠️ No se encontraron canales en el documento');
-          this.channels = [];
-          this.groupedChannels = [];
+  ngAfterViewInit() {
+    this.setupInfiniteScroll();
+  }
+
+  ngOnDestroy() {
+    if (this.observer) {
+      this.observer.disconnect();
+    }
+  }
+
+  private setupInfiniteScroll() {
+    const options = {
+      root: null,
+      rootMargin: '100px',
+      threshold: 0.1
+    };
+
+    this.observer = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting && this.hasMore && !this.loading) {
+          this.loadMoreChannels();
         }
+      });
+    }, options);
+
+    if (this.loadMoreTrigger?.nativeElement) {
+      this.observer.observe(this.loadMoreTrigger.nativeElement);
+    }
+  }
+
+  loadGroups(): void {
+    this.dataService.getGroups('channels').subscribe({
+      next: (groups: string[]) => {
+        this.groups = groups;
+      }
+    });
+  }
+
+  loadChannels(reset: boolean = false): void {
+    if (reset) {
+      this.skip = 0;
+      this.channels = [];
+    }
+
+    this.loading = true;
+
+    this.dataService.getChannels(this.skip, this.limit, this.selectedGroup).subscribe({
+      next: (response: PaginatedResponse<IptvChannel>) => {
+        this.channels = [...this.channels, ...response.items];
+        this.total = response.total;
+        this.skip += response.items.length;
+        this.hasMore = this.skip < this.total;
+        this.groupChannels();
+        this.loading = false;
+        console.log('✅ Canales cargados:', this.channels.length);
       },
       error: (error) => {
         console.error('❌ Error cargando canales:', error);
-        this.channels = [];
-        this.groupedChannels = [];
+        this.loading = false;
       }
     });
   }
 
-  private groupChannels(): void {
-    const groups = new Map<string, Channel[]>();
+  loadMoreChannels(): void {
+    if (!this.hasMore || this.loading) return;
 
-    // Agrupar canales por grupo
-    this.channels.forEach(channel => {
-      const grupo = channel.grupo || 'Sin grupo';
-      if (!groups.has(grupo)) {
-        groups.set(grupo, []);
+    this.dataService.getChannels(this.skip, this.limit, this.selectedGroup).subscribe({
+      next: (response: PaginatedResponse<IptvChannel>) => {
+        this.channels = [...this.channels, ...response.items];
+        this.skip += response.items.length;
+        this.hasMore = this.skip < this.total;
+        this.groupChannels();
       }
-      groups.get(grupo)!.push(channel);
+    });
+  }
+
+  onGroupFilterChange(): void {
+    this.loadChannels(true);
+  }
+
+  private groupChannels(): void {
+    const groups = new Map<string, IptvChannel[]>();
+
+    this.channels.forEach(channel => {
+      const groupName = channel.grupo || 'Sin grupo';
+      if (!groups.has(groupName)) {
+        groups.set(groupName, []);
+      }
+      groups.get(groupName)!.push(channel);
     });
 
-    // Convertir Map a array y ordenar alfabéticamente por grupo
     this.groupedChannels = Array.from(groups.entries())
-      .map(([grupo, channels]) => ({
-        grupo,
-        channels: channels.sort((a, b) => a.numero - b.numero),
-        expanded: true  // Por defecto todos expandidos
+      .map(([name, channels]) => ({
+        name,
+        channels: channels.sort((a, b) => (a.num || 0) - (b.num || 0)),
+        expanded: true
       }))
-      .sort((a, b) => a.grupo.localeCompare(b.grupo));
+      .sort((a, b) => a.name.localeCompare(b.name));
   }
 
   toggleGroup(group: ChannelGroup): void {
     group.expanded = !group.expanded;
   }
 
-  onChannelClick(channel: Channel): void {
+  onChannelClick(channel: IptvChannel): void {
     console.log('▶️ Canal seleccionado:', channel.nombre);
-
-    // Guardamos el canal en el servicio de estado
     this.playerState.setChannel(channel);
-
-    // Creamos el slug del nombre del canal
     const slug = slugify(channel.nombre);
-
-    // Navegamos al reproductor con el slug
     this.router.navigate(['/player', slug]);
   }
 
@@ -110,33 +167,29 @@ export class TvChannelsComponent implements OnInit {
     const searchTermNumber = parseInt(this.searchTerm);
 
     const filteredChannels = this.channels.filter(channel => {
-      // Buscar por nombre
       const matchesName = channel.nombre.toLowerCase().includes(searchTermLower);
-      // Buscar por grupo
-      const matchesGroup = channel.grupo.toLowerCase().includes(searchTermLower);
-      // Buscar por número exacto
-      const matchesNumber = !isNaN(searchTermNumber) && channel.numero === searchTermNumber;
+      const matchesGroup = channel.grupo?.toLowerCase().includes(searchTermLower) || false;
+      const matchesNumber = !isNaN(searchTermNumber) && channel.num === searchTermNumber;
 
       return matchesName || matchesGroup || matchesNumber;
     });
 
-    // Reagrupar los canales filtrados
-    const groups = new Map<string, Channel[]>();
+    const groups = new Map<string, IptvChannel[]>();
     filteredChannels.forEach(channel => {
-      const grupo = channel.grupo || 'Sin grupo';
-      if (!groups.has(grupo)) {
-        groups.set(grupo, []);
+      const groupName = channel.grupo || 'Sin grupo';
+      if (!groups.has(groupName)) {
+        groups.set(groupName, []);
       }
-      groups.get(grupo)!.push(channel);
+      groups.get(groupName)!.push(channel);
     });
 
     this.groupedChannels = Array.from(groups.entries())
-      .map(([grupo, channels]) => ({
-        grupo,
-        channels: channels.sort((a, b) => a.numero - b.numero),
-        expanded: true  // Al buscar, expandir todos los grupos
+      .map(([name, channels]) => ({
+        name,
+        channels: channels.sort((a, b) => (a.num || 0) - (b.num || 0)),
+        expanded: true
       }))
-      .sort((a, b) => a.grupo.localeCompare(b.grupo));
+      .sort((a, b) => a.name.localeCompare(b.name));
   }
 
   get totalChannels(): number {

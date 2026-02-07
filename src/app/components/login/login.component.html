@@ -1,17 +1,17 @@
-<!-- login.component.html -->
 <div class="login-container">
   <div class="login-card">
-    <h2>Iniciar Sesión</h2>
+    <h2>Iniciar Sesión IPTV</h2>
+    <p class="login-subtitle">Ingresa tus credenciales para acceder</p>
 
     <form (ngSubmit)="onLogin()" #loginForm="ngForm">
       <div class="form-group">
-        <label for="email">Correo Electrónico</label>
+        <label for="email">Usuario</label>
         <input
-          type="email"
+          type="text"
           id="email"
           name="email"
           [(ngModel)]="email"
-          placeholder="ejemplo@correo.com"
+          placeholder="nombre_usuario"
           required
           [disabled]="loading"
         />
@@ -43,55 +43,5 @@
         <span *ngIf="loading">Iniciando sesión...</span>
       </button>
     </form>
-  </div>
-</div>
-
-<!-- Modal de confirmación de sesión activa -->
-<div class="modal-overlay" *ngIf="showSessionModal" (click)="cancelForceLogin()">
-  <div class="modal-content" (click)="$event.stopPropagation()">
-    <div class="modal-header">
-      <h3>Sesión Activa Detectada</h3>
-    </div>
-
-    <div class="modal-body">
-      <div class="warning-icon">⚠️</div>
-
-      <p class="modal-text">
-        Ya existe una sesión activa para esta cuenta en otro dispositivo.
-      </p>
-
-      <div class="session-info" *ngIf="activeSessionInfo">
-        <div class="info-row">
-          <span class="info-label">Dispositivo:</span>
-          <span class="info-value">{{ getDeviceInfo(activeSessionInfo.userAgent) }}</span>
-        </div>
-        <div class="info-row">
-          <span class="info-label">Último acceso:</span>
-          <span class="info-value">{{ formatDate(activeSessionInfo.lastActivity) }}</span>
-        </div>
-      </div>
-
-      <p class="modal-question">
-        ¿Deseas cerrar la otra sesión e iniciar sesión aquí?
-      </p>
-    </div>
-
-    <div class="modal-footer">
-      <button
-        class="btn-secondary"
-        (click)="cancelForceLogin()"
-        [disabled]="loading"
-      >
-        Cancelar
-      </button>
-      <button
-        class="btn-danger"
-        (click)="confirmForceLogin()"
-        [disabled]="loading"
-      >
-        <span *ngIf="!loading">Cerrar otra sesión</span>
-        <span *ngIf="loading">Cerrando...</span>
-      </button>
-    </div>
   </div>
 </div>

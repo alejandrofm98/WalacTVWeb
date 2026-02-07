@@ -138,8 +138,9 @@ body {
   padding-top: 80px;
 }
 
-/* ===== ENLACE CANALES ===== */
+/* ===== ENLACES DE NAVEGACIÓN ===== */
 a[routerLink="/channels"],
+a[routerLink="/iptv"],
 .nav-link {
   color: rgba(255, 255, 255, 0.9);
   font-weight: 600;
@@ -154,6 +155,8 @@ a[routerLink="/channels"],
 
 a[routerLink="/channels"]:hover,
 a[routerLink="/channels"].active-link,
+a[routerLink="/iptv"]:hover,
+a[routerLink="/iptv"].active-link,
 .nav-link:hover,
 .nav-link.active-link {
   background: rgba(59, 130, 246, 0.2);
@@ -246,6 +249,7 @@ a[routerLink="/channels"].active-link,
   }
 
   a[routerLink="/channels"],
+  a[routerLink="/iptv"],
   .nav-link,
   .logout-btn {
     width: 100%;

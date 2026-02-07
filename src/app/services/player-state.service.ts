@@ -1,34 +1,21 @@
 import { Injectable } from '@angular/core';
-import { Events } from '../models';
-import { Channel } from '../models/channel.model';
+import { IptvChannel } from './data.service';
 
 @Injectable({
   providedIn: 'root'
 })
 export class PlayerStateService {
-  private currentEvent: Events | null = null;
-  private currentChannel: Channel | null = null;
+  private currentChannel: IptvChannel | null = null;
 
-  setEvent(event: Events): void {
-    this.currentEvent = event;
-    this.currentChannel = null; // Limpiamos el canal cuando se establece un evento
-  }
-
-  getEvent(): Events | null {
-    return this.currentEvent;
-  }
-
-  setChannel(channel: Channel): void {
+  setChannel(channel: IptvChannel): void {
     this.currentChannel = channel;
-    this.currentEvent = null; // Limpiamos el evento cuando se establece un canal
   }
 
-  getChannel(): Channel | null {
+  getChannel(): IptvChannel | null {
     return this.currentChannel;
   }
 
   clear(): void {
-    this.currentEvent = null;
     this.currentChannel = null;
   }
 }

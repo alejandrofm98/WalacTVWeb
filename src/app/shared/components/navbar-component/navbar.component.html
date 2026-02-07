@@ -18,15 +18,19 @@
       </svg>
     </button>
 
-    <!-- Enlaces de navegación -->
-    <div class="navbar-links" [class.active]="isMenuOpen">
-      <a routerLink="/channels" routerLinkActive="active-link" (click)="isMenuOpen = false">
-        Canales
-      </a>
+      <!-- Enlaces de navegación -->
+      <div class="navbar-links" [class.active]="isMenuOpen">
+        <a routerLink="/channels" routerLinkActive="active-link" (click)="isMenuOpen = false">
+          Canales
+        </a>
 
-      <!-- User Info -->
-      <span class="user-email" *ngIf="userEmail">
-        {{ userEmail }}
+        <!-- Acceso directo al panel IPTV solo para admin -->
+        <a routerLink="/iptv" routerLinkActive="active-link" *ngIf="isAdminUser" (click)="isMenuOpen = false">
+          Panel IPTV
+        </a>
+
+      <span class="user-email" *ngIf="username">
+        {{ username }}
       </span>
 
       <!-- Botón de Logout -->

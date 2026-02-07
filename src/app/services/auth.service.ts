@@ -1,457 +1,196 @@
-// auth.service.ts
 import { Injectable, inject } from '@angular/core';
-import { Auth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from '@angular/fire/auth';
-import { Database, ref, set, onValue, remove, onDisconnect, get } from '@angular/fire/database';
-import { Observable } from 'rxjs';
+import { HttpClient } from '@angular/common/http';
+import { BehaviorSubject, Observable, of, throwError } from 'rxjs';
+import { catchError, tap } from 'rxjs/operators';
+import { environment } from '../../environments/environment';
 
-export interface SessionData {
-  deviceId: string;
-  loginTime: number;
-  lastActivity: number;
-  userAgent: string;
+export interface LoginResponse {
+  access_token: string;
+  token_type: string;
+  role: 'admin' | 'user';
+}
+
+export interface User {
+  id: string;
+  username: string;
+  email: string;
+  role: string;
+  max_connections: number;
+  is_active: boolean;
+  created_at: string;
 }
 
 @Injectable({
   providedIn: 'root'
 })
 export class AuthService {
-  private auth = inject(Auth);
-  private db = inject(Database);
-  private currentDeviceId: string;
-  private activityInterval: any = null;
-  private sessionMonitorUnsubscribe: (() => void) | null = null;
+  private http = inject(HttpClient);
+  private apiUrl = environment.iptvApiUrl;
+
+  private currentUserSubject = new BehaviorSubject<User | null>(null);
+  private tokenSubject = new BehaviorSubject<string | null>(null);
+
+  currentUser$ = this.currentUserSubject.asObservable();
+  token$ = this.tokenSubject.asObservable();
+
+  private deviceId: string;
+  private activityInterval: ReturnType<typeof setInterval> | null = null;
   private isLoggingIn = false;
   private isManualLogout = false;
-  private sessionVerified = false;
-  private verificationTimeout: any = null;
-  private reconnectUnsubscribe: (() => void) | null = null; // 🆕
 
   constructor() {
-    this.currentDeviceId = this.generateUniqueId();
-    console.log('🆔 Device ID generado:', this.currentDeviceId);
-    this.setupAuthStateListener();
+    this.deviceId = this.generateUniqueId();
+    console.log('🆔 Device ID generado:', this.deviceId);
+    this.loadStoredSession();
   }
 
   private generateUniqueId(): string {
     return `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
   }
 
-  private setupAuthStateListener(): void {
-    onAuthStateChanged(this.auth, (user) => {
-      if (user && !this.isLoggingIn) {
-        console.log('👤 onAuthStateChanged: Usuario detectado (auto-config)');
-        this.updateLastActivity(user.uid);
-        this.setupDisconnectHandler(user.uid);
-        this.setupReconnectHandler(user.uid);
-        this.monitorSessionValidity(user.uid);
-        this.startActivityPing(user.uid);
-      } else if (!user) {
-        console.log('👤 onAuthStateChanged: Usuario desconectado');
-        this.stopActivityPing();
-        this.stopSessionMonitor();
+  private loadStoredSession(): void {
+    const token = localStorage.getItem('iptv_token');
+    const user = localStorage.getItem('iptv_user');
+
+    if (token && user) {
+      try {
+        const userData = JSON.parse(user);
+        this.tokenSubject.next(token);
+        this.currentUserSubject.next(userData);
+        console.log('✅ Sesión restaurada desde localStorage');
+        this.startActivityPing();
+      } catch {
+        this.clearSession();
       }
-    });
+    }
   }
 
-  private startActivityPing(uid: string): void {
+  async login(username: string, password: string, forceLogin: boolean = false): Promise<{ success: boolean; user?: User; requiresConfirmation?: boolean; message?: string }> {
+    if (this.isLoggingIn) {
+      return { success: false, message: 'Login en progreso' };
+    }
+
+    this.isLoggingIn = true;
+
+    try {
+      const formData = new URLSearchParams();
+      formData.append('username', username);
+      formData.append('password', password);
+
+      const response = await this.http.post<LoginResponse>(
+        `${this.apiUrl}/api/auth/login`,
+        formData,
+        {
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+        }
+      ).toPromise();
+
+      if (response?.access_token) {
+        const user: User = {
+          id: '',
+          username: username,
+          email: '',
+          role: response.role,
+          max_connections: 1,
+          is_active: true,
+          created_at: new Date().toISOString()
+        };
+
+        localStorage.setItem('iptv_token', response.access_token);
+        localStorage.setItem('iptv_user', JSON.stringify(user));
+        localStorage.setItem('iptv_username', username);
+        localStorage.setItem('iptv_password', password);
+
+        this.tokenSubject.next(response.access_token);
+        this.currentUserSubject.next(user);
+        this.startActivityPing();
+
+        console.log('✅ Login exitoso');
+        this.isLoggingIn = false;
+
+        return { success: true, user };
+      }
+
+      this.isLoggingIn = false;
+      return { success: false, message: 'Respuesta inválida del servidor' };
+    } catch (error: any) {
+      console.error('❌ Error en login:', error);
+      this.isLoggingIn = false;
+
+      if (error.status === 429) {
+        return { success: false, message: 'Límite de dispositivos alcanzado' };
+      }
+
+      const message = error.error?.detail || 'Error al iniciar sesión';
+      return { success: false, message };
+    }
+  }
+
+  async logout(): Promise<void> {
+    console.log('🚪 Cerrando sesión');
+
+    this.isManualLogout = true;
     this.stopActivityPing();
-    console.log('⏰ Iniciando ping de actividad');
-    this.updateLastActivity(uid);
+
+    this.clearSession();
+
+    this.isManualLogout = false;
+  }
+
+  private clearSession(): void {
+    localStorage.removeItem('iptv_token');
+    localStorage.removeItem('iptv_user');
+    localStorage.removeItem('iptv_username');
+    localStorage.removeItem('iptv_password');
+
+    this.tokenSubject.next(null);
+    this.currentUserSubject.next(null);
+    this.stopActivityPing();
+  }
+
+  getCurrentUser(): User | null {
+    return this.currentUserSubject.value;
+  }
+
+  getToken(): string | null {
+    return this.tokenSubject.value;
+  }
+
+  getUsername(): string | null {
+    return localStorage.getItem('iptv_username');
+  }
+
+  getPassword(): string | null {
+    return localStorage.getItem('iptv_password');
+  }
+
+  isAuthenticated(): boolean {
+    return !!this.tokenSubject.value && !!this.currentUserSubject.value;
+  }
+
+  isAdmin(): boolean {
+    return this.currentUserSubject.value?.role === 'admin';
+  }
+
+  private startActivityPing(): void {
+    this.stopActivityPing();
+
+    if (!this.isAuthenticated()) return;
 
     this.activityInterval = setInterval(() => {
-      this.updateLastActivity(uid);
+      console.log('⏰ Ping de actividad');
     }, 30000);
   }
 
   private stopActivityPing(): void {
     if (this.activityInterval) {
-      console.log('⏰ Deteniendo ping de actividad');
       clearInterval(this.activityInterval);
       this.activityInterval = null;
     }
   }
 
-  private stopSessionMonitor(): void {
-    if (this.sessionMonitorUnsubscribe) {
-      console.log('👁️ Deteniendo monitor de sesión');
-      this.sessionMonitorUnsubscribe();
-      this.sessionMonitorUnsubscribe = null;
-    }
-    if (this.verificationTimeout) {
-      clearTimeout(this.verificationTimeout);
-      this.verificationTimeout = null;
-    }
-    this.stopReconnectHandler();
-  }
-
-  private monitorSessionValidity(uid: string): void {
-    this.stopSessionMonitor();
-    this.sessionVerified = false; // 🆕 Resetear flag
-
-    const sessionRef = ref(this.db, `activeSessions/${uid}/${this.currentDeviceId}`);
-    console.log('👁️ Iniciando monitor de sesión para device:', this.currentDeviceId);
-
-    this.sessionMonitorUnsubscribe = onValue(sessionRef, (snapshot) => {
-      const data = snapshot.val();
-
-      console.log('📊 Estado de sesión:', {
-        exists: snapshot.exists(),
-        deviceId: this.currentDeviceId,
-        data: data,
-        hasCurrentUser: !!this.auth.currentUser,
-        isLoggingIn: this.isLoggingIn,
-        isManualLogout: this.isManualLogout,
-        sessionVerified: this.sessionVerified
-      });
-
-      // 🆕 Ignorar si está en proceso de login/logout
-      if (this.isLoggingIn || this.isManualLogout) {
-        console.log('⏭️ Ignorando cambio de sesión (login/logout en progreso)');
-        return;
-      }
-
-      // 🆕 Ignorar si la sesión aún no ha sido verificada (delay de 2 segundos)
-      if (!this.sessionVerified && this.auth.currentUser) {
-        console.log('⏳ Esperando verificación de sesión...');
-        this.scheduleSessionVerification(uid);
-        return;
-      }
-
-      // 🆕 Solo mostrar alerta si la sesión YA fue verificada y ahora desaparece
-      if (!snapshot.exists() && this.sessionVerified && this.auth.currentUser) {
-        console.log('⚠️ Sesión eliminada DESPUÉS de verificación - Cerrando sesión local');
-
-        this.stopActivityPing();
-        this.stopSessionMonitor();
-
-        signOut(this.auth).then(() => {
-          alert('Tu sesión ha sido cerrada porque iniciaste sesión en otro dispositivo');
-          window.location.href = '/login';
-        }).catch(err => {
-          console.error('Error al cerrar sesión:', err);
-        });
-      }
-    });
-  }
-
-  // 🆕 Nueva función: Programa verificación de sesión
-  private scheduleSessionVerification(uid: string): void {
-    if (this.verificationTimeout) {
-      clearTimeout(this.verificationTimeout);
-    }
-
-    this.verificationTimeout = setTimeout(async () => {
-      console.log('🔍 Verificando que la sesión existe...');
-
-      // Verificar directamente si la sesión existe
-      const sessionRef = ref(this.db, `activeSessions/${uid}/${this.currentDeviceId}`);
-      const snapshot = await get(sessionRef);
-
-      if (snapshot.exists()) {
-        console.log('✅ Sesión verificada correctamente');
-        this.sessionVerified = true;
-      } else if (this.auth.currentUser && !this.isManualLogout) {
-        // La sesión no existe pero el usuario está logueado
-        // Esto puede significar que fue reemplazada por otra sesión
-        console.log('⚠️ Sesión no encontrada después del delay - posiblemente reemplazada');
-
-        // Verificar si hay otras sesiones activas
-        const allSessionsRef = ref(this.db, `activeSessions/${uid}`);
-        const allSnap = await get(allSessionsRef);
-        const sessions = allSnap.val();
-
-        if (sessions && Object.keys(sessions).length > 0) {
-          const otherSession = Object.entries(sessions).find(([id]) => id !== this.currentDeviceId);
-          if (otherSession) {
-            console.log('🔄 Otra sesión activa detectada, cerrando local...');
-            this.stopActivityPing();
-            this.stopSessionMonitor();
-
-            signOut(this.auth).then(() => {
-              alert('Tu sesión ha sido cerrada porque iniciaste sesión en otro dispositivo');
-              window.location.href = '/login';
-            });
-          }
-        }
-      }
-
-      this.verificationTimeout = null;
-    }, 2000); // 🆕 Delay de 2 segundos
-  }
-
-  private updateLastActivity(uid: string): void {
-    const sessionRef = ref(this.db, `activeSessions/${uid}/${this.currentDeviceId}`);
-
-    const sessionData: Partial<SessionData> = {
-      deviceId: this.currentDeviceId,
-      lastActivity: Date.now(),
-      userAgent: navigator.userAgent
-    };
-
-    set(sessionRef, sessionData).catch(err => {
-      console.error('Error actualizando actividad:', err);
-    });
-  }
-
-  private setupDisconnectHandler(uid: string): void {
-    const sessionRef = ref(this.db, `activeSessions/${uid}/${this.currentDeviceId}`);
-    onDisconnect(sessionRef).remove();
-    console.log('🔌 Handler de desconexión configurado');
-  }
-
-  private setupReconnectHandler(uid: string): void {
-    this.stopReconnectHandler();
-
-    const connectionRef = ref(this.db, '.info/connected');
-
-    this.reconnectUnsubscribe = onValue(connectionRef, async (snap) => {
-      if (snap.val() === true && this.auth.currentUser && !this.isManualLogout) {
-        console.log('🔄 Conexión restaurada, verificando sesión...');
-
-        await new Promise(resolve => setTimeout(resolve, 500));
-
-        const sessionRef = ref(this.db, `activeSessions/${uid}/${this.currentDeviceId}`);
-        const snapshot = await get(sessionRef);
-
-        if (!snapshot.exists()) {
-          console.log('🔄 Sesión no existe, recreando después de reconexión...');
-          await this.registerSession(uid);
-        } else {
-          console.log('✅ Sesión intacta después de reconexión');
-        }
-      }
-    });
-  }
-
-  private stopReconnectHandler(): void {
-    if (this.reconnectUnsubscribe) {
-      this.reconnectUnsubscribe();
-      this.reconnectUnsubscribe = null;
-    }
-  }
-
-  /**
-   * Verifica sesiones activas usando onValue para garantizar datos en tiempo real
-   */
-  private checkActiveSession(uid: string): Promise<SessionData | null> {
-    return new Promise((resolve, reject) => {
-      const sessionsRef = ref(this.db, `activeSessions/${uid}`);
-
-      console.log('🔍 Verificando sesiones activas con listener en tiempo real...');
-
-      try {
-        // Usar onValue con { onlyOnce: true } para obtener datos actualizados
-        onValue(sessionsRef, (snapshot) => {
-          const sessions = snapshot.val();
-
-          console.log('🔍 Sesiones encontradas:', sessions);
-
-          if (!sessions) {
-            console.log('ℹ️ No hay sesiones activas');
-            resolve(null);
-            return;
-          }
-
-          // Buscar cualquier sesión activa
-          const activeSessions = Object.entries(sessions);
-
-          if (activeSessions.length > 0) {
-            const [deviceId, sessionData] = activeSessions[0];
-            console.log('⚠️ Sesión activa encontrada:', {
-              deviceId,
-              loginTime: (sessionData as SessionData).loginTime,
-              lastActivity: (sessionData as SessionData).lastActivity
-            });
-
-            resolve({
-              ...(sessionData as SessionData),
-              deviceId: deviceId
-            });
-          } else {
-            resolve(null);
-          }
-        }, { onlyOnce: true });
-      } catch (error) {
-        console.error('❌ Error verificando sesiones:', error);
-        resolve(null);
-      }
-    });
-  }
-
-  /**
-   * Cierra todas las sesiones EXCEPTO la actual
-   */
-  private async closeOtherSessions(uid: string): Promise<void> {
-    return new Promise((resolve, reject) => {
-      const sessionsRef = ref(this.db, `activeSessions/${uid}`);
-
-      const unsubscribe = onValue(sessionsRef, async (snapshot) => {
-        const sessions = snapshot.val();
-
-        console.log('🗑️ Cerrando otras sesiones. Total sesiones:', sessions);
-
-        if (sessions) {
-          const promises = Object.keys(sessions)
-            .filter(deviceId => deviceId !== this.currentDeviceId)
-            .map(deviceId => {
-              console.log('❌ Cerrando sesión de device:', deviceId);
-              return remove(ref(this.db, `activeSessions/${uid}/${deviceId}`));
-            });
-
-          try {
-            await Promise.all(promises);
-            console.log('✅ Otras sesiones cerradas exitosamente');
-            resolve();
-          } catch (error) {
-            console.error('Error cerrando otras sesiones:', error);
-            reject(error);
-          }
-        } else {
-          console.log('ℹ️ No hay otras sesiones para cerrar');
-          resolve();
-        }
-      }, { onlyOnce: true });
-    });
-  }
-
-  /**
-   * Registra una nueva sesión
-   */
-  private async registerSession(uid: string): Promise<void> {
-    const sessionRef = ref(this.db, `activeSessions/${uid}/${this.currentDeviceId}`);
-    const sessionData: SessionData = {
-      deviceId: this.currentDeviceId,
-      loginTime: Date.now(),
-      lastActivity: Date.now(),
-      userAgent: navigator.userAgent
-    };
-
-    console.log('📝 Registrando sesión:', sessionData);
-    await set(sessionRef, sessionData);
-    this.setupDisconnectHandler(uid);
-    this.sessionVerified = true; // 🆕 Marcar como verificada inmediatamente
-  }
-
-  /**
-   * Login con verificación de sesión única
-   */
-  async login(email: string, password: string, forceLogin: boolean = false): Promise<any> {
-    try {
-      console.log('🔐 Iniciando login. ForceLogin:', forceLogin);
-
-      this.isLoggingIn = true;
-      this.isManualLogout = false; // 🆕 Resetear bandera al hacer login
-
-      // Autenticar al usuario
-      const userCredential = await signInWithEmailAndPassword(this.auth, email, password);
-      const uid = userCredential.user.uid;
-
-      console.log('✅ Autenticación exitosa. UID:', uid);
-
-      // Esperar un momento para que Firebase sincronice
-      await new Promise(resolve => setTimeout(resolve, 500));
-
-      if (!forceLogin) {
-        // Verificar si hay sesiones activas
-        const activeSession = await this.checkActiveSession(uid);
-
-        if (activeSession) {
-          console.log('⚠️ Sesión activa detectada:', activeSession);
-
-          // Cerrar la sesión de Firebase
-          await signOut(this.auth);
-          this.isLoggingIn = false;
-
-          return {
-            success: false,
-            requiresConfirmation: true,
-            activeSession: activeSession,
-            message: 'Ya existe una sesión activa en otro dispositivo'
-          };
-        }
-
-        // No hay sesiones activas, registrar esta
-        console.log('✅ No hay conflictos, registrando nueva sesión');
-        await this.registerSession(uid);
-
-        // Configurar monitoring y pings
-        this.setupDisconnectHandler(uid);
-        this.setupReconnectHandler(uid);
-        this.monitorSessionValidity(uid);
-        this.startActivityPing(uid);
-
-        this.isLoggingIn = false;
-
-        return {
-          success: true,
-          user: userCredential.user
-        };
-      } else {
-        // ForceLogin: registrar nueva sesión y cerrar las demás
-        console.log('🔄 Login forzado iniciado');
-
-        await this.registerSession(uid);
-        console.log('📝 Nueva sesión registrada');
-
-        await this.closeOtherSessions(uid);
-        console.log('🗑️ Otras sesiones cerradas');
-
-        // Configurar monitoring y pings
-        this.setupDisconnectHandler(uid);
-        this.setupReconnectHandler(uid);
-        this.monitorSessionValidity(uid);
-        this.startActivityPing(uid);
-
-        this.isLoggingIn = false;
-
-        console.log('✅ Login forzado completado');
-
-        return {
-          success: true,
-          user: userCredential.user
-        };
-      }
-    } catch (error: any) {
-      console.error('❌ Error en login:', error);
-      this.isLoggingIn = false;
-      throw error;
-    }
-  }
-
-  /**
-   * Cierra la sesión actual
-   */
-  async logout(): Promise<void> {
-    console.log('🚪 Cerrando sesión manualmente');
-
-    // 🆕 Activar bandera ANTES de eliminar la sesión
-    this.isManualLogout = true;
-
-    // Detener monitores primero
-    this.stopActivityPing();
-    this.stopSessionMonitor();
-
-    const user = this.auth.currentUser;
-    if (user) {
-      const sessionRef = ref(this.db, `activeSessions/${user.uid}/${this.currentDeviceId}`);
-      await remove(sessionRef);
-    }
-
-    await signOut(this.auth);
-
-    // 🆕 Resetear bandera después del logout
-    this.isManualLogout = false;
-  }
-
-  getCurrentUser() {
-    return this.auth.currentUser;
-  }
-
-  getAuthState(): Observable<any> {
-    return new Observable((observer) => {
-      onAuthStateChanged(this.auth, (user) => {
-        observer.next(user);
-      });
-    });
+  getAuthHeaders(): { [header: string]: string } {
+    const token = this.getToken();
+    return token ? { 'Authorization': `Bearer ${token}` } : {};
   }
 }

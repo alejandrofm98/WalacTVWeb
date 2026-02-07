@@ -1,4 +1,4 @@
-import { Component, inject } from '@angular/core';
+import { Component, inject, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterLink, RouterLinkActive } from '@angular/router';
 import { AuthService } from '../../../services/auth.service';
@@ -10,16 +10,24 @@ import { AuthService } from '../../../services/auth.service';
   templateUrl: './navbar.component.html',
   styleUrls: ['./navbar.component.css']
 })
-export class NavbarComponent {
+export class NavbarComponent implements OnInit {
   private authService = inject(AuthService);
 
   isLoading = false;
-  userEmail: string | null = null;
-  isMenuOpen = false; // 👈 Nuevo: controla el menú móvil
+  username: string | null = null;
+  isMenuOpen = false;
+  isAdminUser = false;
 
   ngOnInit() {
-    const user = this.authService.getCurrentUser();
-    this.userEmail = user?.email || null;
+    this.authService.currentUser$.subscribe(user => {
+      if (user) {
+        this.username = user.username;
+        this.isAdminUser = user.role === 'admin';
+      } else {
+        this.username = null;
+        this.isAdminUser = false;
+      }
+    });
   }
 
   toggleMenu() {
