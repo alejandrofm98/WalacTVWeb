@@ -4,6 +4,7 @@ import {Router} from '@angular/router';
 import {DataService, IptvChannel, IptvMovie, IptvSeries, PaginatedResponse} from '../../services/data.service';
 import {slugify} from '../../utils/slugify';
 import {NavbarComponent} from '../../shared/components/navbar-component/navbar.component';
+import {HttpsPipe} from '../../pipes/https.pipe';
 
 type TabType = 'channels' | 'movies' | 'series';
 
