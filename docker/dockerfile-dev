@@ -13,7 +13,6 @@ RUN npm ci --legacy-peer-deps
 COPY . .
 
 # ARGs que vienen de Dokploy o docker-compose
-ARG API_WALACTV
 ARG APP_NAME
 ARG FIREBASE_API_KEY
 ARG FIREBASE_AUTH_DOMAIN
@@ -27,8 +26,6 @@ ARG ACE_STREAM_HOST
 # 🔧 Crear environment.ts dinámicamente para desarrollo
 RUN echo "export const environment = { \
   production: false, \
-  apiWalactv: '${API_WALACTV}', \
-  acestreamHost: '${ACE_STREAM_HOST}', \
   appName: '${APP_NAME}', \
   firebase: { \
     apiKey: '${FIREBASE_API_KEY}', \

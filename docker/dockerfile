@@ -13,8 +13,6 @@ RUN npm ci --legacy-peer-deps
 COPY . .
 
 # ARGs que vienen de Dokploy
-ARG API_WALACTV
-ARG ACE_STREAM_HOST
 ARG APP_NAME
 ARG FIREBASE_API_KEY
 ARG FIREBASE_AUTH_DOMAIN
@@ -27,8 +25,6 @@ ARG FIREBASE_APP_ID
 # 🔧 Crear environment.ts dinámicamente para que Angular compile correctamente
 RUN echo "export const environment = { \
   production: true, \
-  apiWalactv: '${API_WALACTV}', \
-  acestreamHost: '${ACE_STREAM_HOST}', \
   appName: '${APP_NAME}', \
   firebase: { \
     apiKey: '${FIREBASE_API_KEY}', \
