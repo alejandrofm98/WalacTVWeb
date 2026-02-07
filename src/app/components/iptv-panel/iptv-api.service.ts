@@ -9,7 +9,7 @@ import { environment } from '../../../environments/environment';
   providedIn: 'root'
 })
 export class IptvApiService {
-  private base = environment.iptvApiUrl;
+  private base = environment.iptvApiUrl.replace(/\/+$/, '');
   private authService = inject(AuthService);
 
   constructor(private http: HttpClient) {}

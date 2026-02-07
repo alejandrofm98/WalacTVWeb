@@ -25,7 +25,7 @@ export interface User {
 })
 export class AuthService {
   private http = inject(HttpClient);
-  private apiUrl = environment.iptvApiUrl;
+  private apiUrl = environment.iptvApiUrl.replace(/\/+$/, '');
 
   private currentUserSubject = new BehaviorSubject<User | null>(null);
   private tokenSubject = new BehaviorSubject<string | null>(null);

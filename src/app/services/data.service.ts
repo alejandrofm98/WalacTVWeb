@@ -51,7 +51,7 @@ export interface PaginatedResponse<T> {
 })
 export class DataService {
   private http = inject(HttpClient);
-  private apiUrl = environment.iptvApiUrl;
+  private apiUrl = environment.iptvApiUrl.replace(/\/+$/, '');
 
   private getCredentials(): { username: string; password: string } {
     return {
