@@ -1,7 +1,8 @@
 import { Injectable, inject } from '@angular/core';
-import { HttpClient, HttpParams } from '@angular/common/http';
-import { Observable, of, BehaviorSubject } from 'rxjs';
+import { HttpClient, HttpParams, HttpHeaders } from '@angular/common/http';
+import { Observable, of } from 'rxjs';
 import { catchError, map } from 'rxjs/operators';
+import { AuthService } from '../services/auth.service';
 import { environment } from '../../environments/environment';
 
 export interface IptvChannel {
@@ -41,9 +42,17 @@ export interface IptvSeries {
 
 export interface PaginatedResponse<T> {
   total: number;
-  skip: number;
-  limit: number;
+  page: number;
+  page_size: number;
+  pages: number;
+  has_next: boolean;
+  has_prev: boolean;
   items: T[];
+}
+
+export interface CountryResponse {
+  code: string;
+  name: string;
 }
 
 @Injectable({
@@ -52,98 +61,86 @@ export interface PaginatedResponse<T> {
 export class DataService {
   private http = inject(HttpClient);
   private apiUrl = environment.iptvApiUrl.replace(/\/+$/, '');
+  private authService = inject(AuthService);
 
-  private getCredentials(): { username: string; password: string } {
-    return {
-      username: localStorage.getItem('iptv_username') || '',
-      password: localStorage.getItem('iptv_password') || ''
-    };
+  private getHeaders(): HttpHeaders {
+    const token = this.authService.getToken();
+    return new HttpHeaders({
+      'Content-Type': 'application/json',
+      ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+    });
   }
 
-  private buildParams(skip: number, limit: number, group?: string, country?: string): HttpParams {
-    const { username, password } = this.getCredentials();
+  private buildParams(page: number, pageSize: number, group?: string, country?: string, search?: string): HttpParams {
     let params = new HttpParams()
-      .set('username', username)
-      .set('password', password)
-      .set('skip', skip.toString())
-      .set('limit', limit.toString());
+      .set('page', page.toString())
+      .set('page_size', pageSize.toString());
 
     if (group) params = params.set('group', group);
     if (country) params = params.set('country', country);
+    if (search) params = params.set('search', search);
 
     return params;
   }
 
-  getChannels(skip: number = 0, limit: number = 50, group?: string, country?: string): Observable<PaginatedResponse<IptvChannel>> {
-    const params = this.buildParams(skip, limit, group, country);
+  getChannels(page: number = 1, pageSize: number = 80, group?: string, country?: string, search?: string): Observable<PaginatedResponse<IptvChannel>> {
+    let params = this.buildParams(page, pageSize, group, country, search);
+    params = params.set('content_type', 'channels');
 
     return this.http.get<PaginatedResponse<IptvChannel>>(
-      `${this.apiUrl}/api/channels`,
-      { params }
+      `${this.apiUrl}/api/content`,
+      { headers: this.getHeaders(), params }
     ).pipe(
-      catchError(() => of({ total: 0, skip, limit, items: [] }))
+      catchError(() => of({ total: 0, page, page_size: pageSize, pages: 0, has_next: false, has_prev: false, items: [] }))
     );
   }
 
   getChannel(id: string): Observable<IptvChannel | null> {
-    const { username, password } = this.getCredentials();
-    const params = new HttpParams()
-      .set('username', username)
-      .set('password', password);
-
     return this.http.get<IptvChannel>(
-      `${this.apiUrl}/api/channels/${id}`,
-      { params }
+      `${this.apiUrl}/api/content/channels/${id}`,
+      { headers: this.getHeaders() }
     ).pipe(
       catchError(() => of(null))
     );
   }
 
-  getMovies(skip: number = 0, limit: number = 50, group?: string, country?: string): Observable<PaginatedResponse<IptvMovie>> {
-    const params = this.buildParams(skip, limit, group, country);
+  getMovies(page: number = 1, pageSize: number = 80, group?: string, country?: string, search?: string): Observable<PaginatedResponse<IptvMovie>> {
+    let params = this.buildParams(page, pageSize, group, country, search);
+    params = params.set('content_type', 'movies');
 
     return this.http.get<PaginatedResponse<IptvMovie>>(
-      `${this.apiUrl}/api/movies`,
-      { params }
+      `${this.apiUrl}/api/content`,
+      { headers: this.getHeaders(), params }
     ).pipe(
-      catchError(() => of({ total: 0, skip, limit, items: [] }))
+      catchError(() => of({ total: 0, page, page_size: pageSize, pages: 0, has_next: false, has_prev: false, items: [] }))
     );
   }
 
   getMovie(id: string): Observable<IptvMovie | null> {
-    const { username, password } = this.getCredentials();
-    const params = new HttpParams()
-      .set('username', username)
-      .set('password', password);
-
     return this.http.get<IptvMovie>(
-      `${this.apiUrl}/api/movies/${id}`,
-      { params }
+      `${this.apiUrl}/api/content/movies/${id}`,
+      { headers: this.getHeaders() }
     ).pipe(
       catchError(() => of(null))
     );
   }
 
-  getSeries(skip: number = 0, limit: number = 50, group?: string, country?: string): Observable<PaginatedResponse<IptvSeries>> {
-    const params = this.buildParams(skip, limit, group, country);
+  getSeries(page: number = 1, pageSize: number = 80, group?: string, country?: string, search?: string): Observable<PaginatedResponse<IptvSeries>> {
+    let params = this.buildParams(page, pageSize, group, country, search);
+    params = params.set('content_type', 'series');
 
     return this.http.get<PaginatedResponse<IptvSeries>>(
-      `${this.apiUrl}/api/series`,
-      { params }
+      `${this.apiUrl}/api/content`,
+      { headers: this.getHeaders(), params }
     ).pipe(
-      catchError(() => of({ total: 0, skip, limit, items: [] }))
+      catchError(() => of({ total: 0, page, page_size: pageSize, pages: 0, has_next: false, has_prev: false, items: [] }))
     );
   }
 
   getSerie(id: string): Observable<IptvSeries | null> {
-    const { username, password } = this.getCredentials();
-    const params = new HttpParams()
-      .set('username', username)
-      .set('password', password);
-
     return this.http.get<IptvSeries>(
-      `${this.apiUrl}/api/series/${id}`,
-      { params }
+      `${this.apiUrl}/api/content/series/${id}`,
+      { headers: this.getHeaders() }
     ).pipe(
       catchError(() => of(null))
     );
@@ -151,16 +148,18 @@ export class DataService {
 
   getGroups(contentType: 'channels' | 'movies' | 'series' = 'channels'): Observable<string[]> {
     return this.http.get<{ groups: string[] }>(
-      `${this.apiUrl}/api/content/groups`
+      `${this.apiUrl}/api/content/groups?content_type=${contentType}`,
+      { headers: this.getHeaders() }
     ).pipe(
       map(response => response.groups || []),
       catchError(() => of([]))
     );
   }
 
-  getCountries(contentType: 'channels' | 'movies' | 'series' = 'channels'): Observable<string[]> {
-    return this.http.get<{ countries: string[] }>(
-      `${this.apiUrl}/api/content/countries`
+  getCountries(contentType: 'channels' | 'movies' | 'series' = 'channels'): Observable<CountryResponse[]> {
+    return this.http.get<{ countries: CountryResponse[] }>(
+      `${this.apiUrl}/api/content/countries?content_type=${contentType}`,
+      { headers: this.getHeaders() }
     ).pipe(
       map(response => response.countries || []),
       catchError(() => of([]))
@@ -168,20 +167,28 @@ export class DataService {
   }
 
   getCounts(): Observable<{ channels: number; movies: number; series: number }> {
-    const { username, password } = this.getCredentials();
-    const params = new HttpParams()
-      .set('username', username)
-      .set('password', password);
-
-    return this.http.get<{ channels: number; movies: number; series: number }>(
-      `${this.apiUrl}/api/content/count`,
-      { params }
-    ).pipe(
-      catchError(() => of({ channels: 0, movies: 0, series: 0 }))
-    );
+    return of({ channels: 0, movies: 0, series: 0 });
   }
 
   getStreamUrl(type: 'live' | 'movie' | 'series', streamId: string): string {
-    return '';
+    const username = localStorage.getItem('iptv_username') || '';
+    const password = localStorage.getItem('iptv_password') || '';
+    return `${this.apiUrl}/stream/${type}/${username}/${password}/${streamId}`;
+  }
+
+  searchAll(query: string, limit: number = 20): Observable<{
+    channels: IptvChannel[];
+    movies: IptvMovie[];
+    series: IptvSeries[];
+  }> {
+    if (!query.trim()) {
+      return of({ channels: [], movies: [], series: [] });
+    }
+
+    return of({
+      channels: [] as IptvChannel[],
+      movies: [] as IptvMovie[],
+      series: [] as IptvSeries[]
+    });
   }
 }

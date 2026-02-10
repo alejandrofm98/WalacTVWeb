@@ -12,6 +12,7 @@ import {
 import {CommonModule} from '@angular/common';
 import {ActivatedRoute, Router} from '@angular/router';
 import {DataService, IptvChannel} from '../../services/data.service';
+import {of, expand, reduce} from 'rxjs';
 import {PlayerStateService} from '../../services/player-state.service';
 import {slugify} from '../../utils/slugify';
 import {NavbarComponent} from '../../shared/components/navbar-component/navbar.component';
@@ -71,19 +72,44 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
   private touchEndX = 0;
   private touchEndY = 0;
 
+  private channelsLoaded = false;
+  private boundKeyboardHandler: ((event: KeyboardEvent) => void) | null = null;
+
   constructor(private route: ActivatedRoute) {
+    this.volume = this.playerState.getVolume();
+    this.isMuted = this.playerState.isMuted();
   }
 
   @HostListener('document:keydown', ['$event'])
-  handleKeyboardEvent(event: KeyboardEvent) {
-    if (!this.isChannelMode) return;
+  handleKeyboardEvent(event: KeyboardEvent): void {
+    // Only handle navigation when in channel mode and channels are loaded
+    if (!this.isChannelMode || this.allChannels.length < 2) return;
 
-    if (event.key === 'ArrowRight') {
-      event.preventDefault();
-      this.nextChannel();
-    } else if (event.key === 'ArrowLeft') {
-      event.preventDefault();
-      this.previousChannel();
+    // Prevent handling if user is typing in an input
+    const target = event.target as HTMLElement;
+    if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
+      return;
+    }
+
+    console.log('[KeyNav] key=', event.key, 'currentChannelIndex=', this.currentChannelIndex, 'total=', this.allChannels.length, 'isChannelMode=', this.isChannelMode);
+
+    switch (event.key) {
+      case 'ArrowRight':
+      case 'ArrowUp':
+      case 'Right':
+      case 'Up':
+        event.preventDefault();
+        event.stopPropagation();
+        this.nextChannel();
+        break;
+      case 'ArrowLeft':
+      case 'ArrowDown':
+      case 'Left':
+      case 'Down':
+        event.preventDefault();
+        event.stopPropagation();
+        this.previousChannel();
+        break;
     }
   }
 
@@ -114,14 +140,14 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   onTouchStart(event: TouchEvent): void {
-    if (!this.isChannelMode) return;
+    if (!this.isChannelMode || this.allChannels.length < 2) return;
 
     this.touchStartX = event.changedTouches[0].screenX;
     this.touchStartY = event.changedTouches[0].screenY;
   }
 
   onTouchEnd(event: TouchEvent): void {
-    if (!this.isChannelMode) return;
+    if (!this.isChannelMode || this.allChannels.length < 2) return;
 
     this.touchEndX = event.changedTouches[0].screenX;
     this.touchEndY = event.changedTouches[0].screenY;
@@ -152,63 +178,173 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
       const savedChannel = this.playerState.getChannel() as IptvChannel | null;
 
       if (savedChannel && slugify(savedChannel.nombre) === slug) {
-        this.currentChannel = savedChannel;
-        this.isChannelMode = true;
-        this.eventTitle = savedChannel.nombre;
-        this.updateCurrentChannelIndex();
-        this.loadStreamFromChannel();
+        this.setChannel(savedChannel);
         return;
       }
 
-      this.loadFromBackend(slug);
+      this.findChannelBySlug(slug);
     });
   }
 
   private loadAllChannels(): void {
-    this.dataService.getChannels(0, 100).subscribe({
-      next: (response) => {
-        this.allChannels = response.items;
-        this.allChannels.sort((a, b) => (a.num || 0) - (b.num || 0));
-        this.updateCurrentChannelIndex();
-        console.log('📺 Canales cargados:', this.allChannels.length);
+    const BATCH_SIZE = 500; // Load channels in batches to avoid overwhelming the API
+
+    // First, get the first batch and total count
+    this.dataService.getChannels(0, BATCH_SIZE).subscribe({
+      next: (firstResponse) => {
+        let allItems = [...firstResponse.items];
+        const total = firstResponse.total;
+
+        console.log(`📺 Cargando canales: ${allItems.length} de ${total} (total)`);
+
+        // If there are more channels, load them in batches
+        if (total > BATCH_SIZE) {
+          const remainingBatches = Math.ceil((total - BATCH_SIZE) / BATCH_SIZE);
+          let completedBatches = 0;
+
+          // Create an array of observables for remaining batches
+          const batchRequests = [];
+          for (let i = 1; i <= remainingBatches; i++) {
+            const skip = i * BATCH_SIZE;
+            batchRequests.push(
+              this.dataService.getChannels(skip, BATCH_SIZE).toPromise()
+            );
+          }
+
+          // Execute all remaining batches
+          Promise.all(batchRequests).then(responses => {
+            responses.forEach(response => {
+              if (response && response.items) {
+                allItems = [...allItems, ...response.items];
+              }
+              completedBatches++;
+            });
+
+            this.allChannels = allItems;
+            this.allChannels.sort((a, b) => (a.num || 0) - (b.num || 0));
+            this.channelsLoaded = true;
+            console.log('📺 Todos los canales cargados:', this.allChannels.length);
+
+            if (this.currentChannel) {
+              this.updateCurrentChannelIndex();
+            }
+          }).catch(error => {
+            console.error('Error cargando batches adicionales:', error);
+            this.allChannels = allItems;
+            this.allChannels.sort((a, b) => (a.num || 0) - (b.num || 0));
+            this.channelsLoaded = true;
+            if (this.currentChannel) {
+              this.updateCurrentChannelIndex();
+            }
+          });
+        } else {
+          // All channels loaded in first batch
+          this.allChannels = allItems;
+          this.allChannels.sort((a, b) => (a.num || 0) - (b.num || 0));
+          this.channelsLoaded = true;
+          console.log('📺 Canales cargados:', this.allChannels.length);
+
+          if (this.currentChannel) {
+            this.updateCurrentChannelIndex();
+          }
+        }
       },
-      error: (error) => console.error('Error cargando canales:', error)
+      error: (error) => {
+        console.error('Error cargando canales:', error);
+        this.channelsLoaded = true;
+        if (this.currentChannel) {
+          this.updateCurrentChannelIndex();
+        }
+      }
     });
   }
 
-  private updateCurrentChannelIndex(): void {
-    if (this.currentChannel && this.allChannels.length > 0) {
-      this.currentChannelIndex = this.allChannels.findIndex(
-        c => c.id === this.currentChannel!.id
+  private findChannelBySlug(slug: string): void {
+    if (!this.channelsLoaded) {
+      setTimeout(() => this.findChannelBySlug(slug), 200);
+      return;
+    }
+
+    let foundChannel = this.allChannels.find(c => slugify(c.nombre) === slug);
+
+    if (!foundChannel) {
+      foundChannel = this.allChannels.find(c =>
+        slugify(c.nombre).includes(slug) || slug.includes(slugify(c.nombre))
       );
+    }
+
+    if (foundChannel) {
+      this.setChannel(foundChannel);
+    } else {
+      console.warn('Canal no encontrado:', slug);
     }
   }
 
+  private setChannel(channel: IptvChannel): void {
+    this.currentChannel = channel;
+    this.isChannelMode = true;
+    this.eventTitle = channel.nombre;
+    this.playerState.setChannel(channel);
+
+    this.loadStreamFromChannel();
+
+    // Update index after stream loads, allowing channels to be fully loaded
+    if (this.channelsLoaded) {
+      this.updateCurrentChannelIndex();
+    }
+  }
+
+  private updateCurrentChannelIndex(): void {
+    if (!this.currentChannel) return;
+    this.currentChannelIndex = this.allChannels.findIndex(
+      c => c.id === this.currentChannel!.id
+    );
+
+    // Note: We no longer add the current channel to allChannels if not found.
+    // The channel should already be in the list loaded from the API.
+    // If not found, currentChannelIndex will remain -1 until the correct list is loaded.
+  }
+
   nextChannel(): void {
-    if (!this.isChannelMode || this.allChannels.length === 0) return;
-    const currentIndex = this.allChannels.findIndex(c => c.id === this.currentChannel?.id);
-    if (currentIndex === -1 || currentIndex >= this.allChannels.length - 1) return;
-    const nextChannel = this.allChannels[currentIndex + 1];
+    // Allow navigation as long as there are channels loaded
+    if (this.allChannels.length === 0) return;
+
+    let currentIndex = this.allChannels.findIndex(c => c.id === this.currentChannel?.id);
+
+    // If current channel is not yet in the list, start from 0
+    if (currentIndex === -1) {
+      currentIndex = 0;
+    }
+
+    const nextIndex = currentIndex >= this.allChannels.length - 1 ? 0 : currentIndex + 1;
+    const nextChannel = this.allChannels[nextIndex];
+
     this.navigateToChannel(nextChannel);
   }
 
   previousChannel(): void {
-    if (!this.isChannelMode || this.allChannels.length === 0) return;
-    const currentIndex = this.allChannels.findIndex(c => c.id === this.currentChannel?.id);
-    if (currentIndex <= 0) return;
-    const prevChannel = this.allChannels[currentIndex - 1];
+    // Allow navigation as long as there are channels loaded
+    if (this.allChannels.length === 0) return;
+
+    let currentIndex = this.allChannels.findIndex(c => c.id === this.currentChannel?.id);
+
+    if (currentIndex === -1) {
+      currentIndex = this.allChannels.length - 1;
+    }
+
+    const prevIndex = currentIndex <= 0 ? this.allChannels.length - 1 : currentIndex - 1;
+    const prevChannel = this.allChannels[prevIndex];
+
     this.navigateToChannel(prevChannel);
   }
 
   private navigateToChannel(channel: IptvChannel): void {
+    if (!channel) return;
+
     this.currentChannel = channel;
     this.eventTitle = channel.nombre;
     this.currentChannelIndex = this.allChannels.findIndex(c => c.id === channel.id);
-
-    const savedChannel = this.playerState.getChannel() as IptvChannel | null;
-    if (savedChannel?.id !== channel.id) {
-      this.playerState.setChannel(channel);
-    }
+    this.playerState.setChannel(channel);
 
     const slug = slugify(channel.nombre);
     this.router.navigate(['/player', slug], { replaceUrl: true });
@@ -226,38 +362,14 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   get hasPreviousChannel(): boolean {
-    if (!this.isChannelMode || this.allChannels.length === 0 || !this.currentChannel) return false;
-    const currentIndex = this.allChannels.findIndex(c => c.id === this.currentChannel!.id);
-    return currentIndex > 0;
+    return this.isChannelMode && this.allChannels.length > 1;
   }
 
   get hasNextChannel(): boolean {
-    if (!this.isChannelMode || this.allChannels.length === 0 || !this.currentChannel) return false;
-    const currentIndex = this.allChannels.findIndex(c => c.id === this.currentChannel!.id);
-    return currentIndex !== -1 && currentIndex < this.allChannels.length - 1;
+    return this.isChannelMode && this.allChannels.length > 1;
   }
 
-  private loadFromBackend(slug: string) {
-    this.dataService.getChannels(0, 100).subscribe({
-      next: (response) => {
-        const foundChannel = response.items.find(c =>
-          slugify(c.nombre) === slug
-        );
-
-        if (foundChannel) {
-          this.currentChannel = foundChannel;
-          this.isChannelMode = true;
-          this.eventTitle = foundChannel.nombre;
-          this.playerState.setChannel(foundChannel);
-          this.updateCurrentChannelIndex();
-          this.loadStreamFromChannel();
-        }
-      },
-      error: () => console.error('Canal no encontrado')
-    });
-  }
-
-  private loadStreamFromChannel() {
+  private loadStreamFromChannel(): void {
     if (!this.currentChannel?.id || !this.currentChannel.stream_url) return;
 
     this.streamUrl = this.currentChannel.stream_url;
@@ -270,15 +382,16 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
     }];
 
     this.shouldInitializePlayer = true;
+    this.isPlaying = true;
 
     if (this.videoElement) {
-      setTimeout(() => this.initializePlayer(), 0);
+      setTimeout(() => this.initializePlayer(true), 0);
     }
   }
 
   ngAfterViewInit() {
     if (this.shouldInitializePlayer) {
-      setTimeout(() => this.initializePlayer(), 0);
+      setTimeout(() => this.initializePlayer(true), 0);
     }
 
     setTimeout(() => {
@@ -288,6 +401,29 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
         volumeSlider.style.setProperty('--value', `${percentage}%`);
       }
     }, 100);
+
+    // Ensure keyboard events are captured even when video has focus
+    this.setupKeyboardListeners();
+  }
+
+  private setupKeyboardListeners(): void {
+    // Create bound handler for proper cleanup
+    this.boundKeyboardHandler = this.handleKeyboardEvent.bind(this);
+
+    // Add keyboard listener to video element to ensure it works when focused
+    const video = this.videoElement?.nativeElement;
+    if (video) {
+      video.setAttribute('tabindex', '0');
+      video.style.outline = 'none';
+
+      video.addEventListener('keydown', this.boundKeyboardHandler);
+
+      // Focus the video element to ensure keyboard events work
+      video.focus();
+    }
+
+    // Also listen on window to catch all keyboard events
+    window.addEventListener('keydown', this.boundKeyboardHandler);
   }
 
   ngOnDestroy() {
@@ -307,9 +443,18 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
     }
     this.unlockOrientation();
     this.showNavbar();
+
+    // Cleanup keyboard listeners
+    if (this.boundKeyboardHandler) {
+      window.removeEventListener('keydown', this.boundKeyboardHandler);
+      const video = this.videoElement?.nativeElement;
+      if (video) {
+        video.removeEventListener('keydown', this.boundKeyboardHandler);
+      }
+    }
   }
 
-  private initializePlayer() {
+  private initializePlayer(autoplay: boolean = true) {
     const video = this.videoElement?.nativeElement;
     if (!video || !this.streamUrl) {
       console.error('❌ Video element or stream URL not available');
@@ -328,9 +473,9 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
       this.hlsPlayer = null;
     }
 
-    const wasPlaying = !video.paused;
-    const currentVolume = video.volume;
-    const wasMuted = video.muted;
+    const savedVolume = this.playerState.getVolume();
+    const savedMuted = this.playerState.isMuted();
+    const wasPlaying = autoplay;
 
     const urlLower = urlToUse.toLowerCase();
     const isHLS = urlLower.includes('.m3u8');
@@ -338,7 +483,6 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
     const isMKV = urlLower.includes('.mkv');
     const isChannel = !isHLS && !isMP4 && !isMKV;
 
-    // Wait for libraries to load
     const waitForLibs = (): Promise<{ Hls: any; mpegts: any }> => {
       return new Promise((resolve) => {
         const checkInterval = setInterval(() => {
@@ -349,7 +493,6 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
             resolve({ Hls, mpegts });
           }
         }, 100);
-        // Timeout after 5 seconds
         setTimeout(() => {
           clearInterval(checkInterval);
           resolve({ Hls: (window as any).Hls, mpegts: (window as any).mpegts });
@@ -358,40 +501,38 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
     };
 
     waitForLibs().then(({ Hls, mpegts }) => {
-      console.log('🎬 Libraries loaded:', { Hls: !!Hls, mpegts: !!mpegts });
-
       let playerInitialized = false;
 
       if (isHLS && Hls && Hls.isSupported()) {
-        console.log('🎬 Usando HLS.js');
         playerInitialized = true;
-        this.initHlsPlayer(video, urlToUse, wasPlaying, wasMuted);
+        this.initHlsPlayer(video, urlToUse, wasPlaying, savedMuted, savedVolume);
       } else if (isChannel && mpegts && mpegts.isSupported()) {
-        console.log('🎬 Usando MPEG-TS (mpegts.js)');
         playerInitialized = true;
-        this.initMpegtsPlayer(video, urlToUse, wasPlaying, wasMuted);
+        this.initMpegtsPlayer(video, urlToUse, wasPlaying, savedMuted, savedVolume);
       } else if ((isMP4 || isMKV) && (video.canPlayType('video/mp4') || video.canPlayType('video/webm'))) {
-        console.log('🎬 Usando video nativo (MP4/MKV)');
         playerInitialized = true;
         video.src = urlToUse;
+        video.muted = savedMuted;
+        video.volume = savedVolume;
         video.load();
-        this.playVideo(video, wasPlaying, wasMuted);
+        this.playVideo(video, wasPlaying, savedMuted, savedVolume);
       } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-        console.log('🎬 Usando HLS nativo (Safari)');
         playerInitialized = true;
         video.src = urlToUse;
+        video.muted = savedMuted;
+        video.volume = savedVolume;
         video.load();
-        this.playVideo(video, wasPlaying, wasMuted);
+        this.playVideo(video, wasPlaying, savedMuted, savedVolume);
       } else if (mpegts && mpegts.isSupported()) {
-        console.log('🎬 Usando MPEG-TS como fallback');
         playerInitialized = true;
-        this.initMpegtsPlayer(video, urlToUse, wasPlaying, wasMuted);
+        this.initMpegtsPlayer(video, urlToUse, wasPlaying, savedMuted, savedVolume);
       } else {
-        console.warn('⚠️ Navegador no soporta formatos');
         playerInitialized = true;
         video.src = urlToUse;
+        video.muted = savedMuted;
+        video.volume = savedVolume;
         video.load();
-        this.playVideo(video, wasPlaying, wasMuted);
+        this.playVideo(video, wasPlaying, savedMuted, savedVolume);
       }
 
       if (!playerInitialized) {
@@ -402,7 +543,7 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
     this.setupVideoEventListeners(video);
   }
 
-  private initHlsPlayer(video: HTMLVideoElement, url: string, wasPlaying: boolean, wasMuted: boolean): void {
+  private initHlsPlayer(video: HTMLVideoElement, url: string, wasPlaying: boolean, wasMuted: boolean, volume: number): void {
     const Hls = (window as any).Hls;
 
     this.hlsPlayer = new Hls({
@@ -417,9 +558,9 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
 
     this.hlsPlayer.on(Hls.Events.MANIFEST_PARSED, () => {
       console.log('✅ HLS manifest parsed');
-      video.volume = video.volume;
+      video.volume = volume;
       video.muted = wasMuted;
-      this.playVideo(video, wasPlaying, wasMuted);
+      this.playVideo(video, wasPlaying, wasMuted, volume);
     });
 
     this.hlsPlayer.on(Hls.Events.ERROR, (event: any, data: any) => {
@@ -444,7 +585,7 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
     });
   }
 
-  private initMpegtsPlayer(video: HTMLVideoElement, url: string, wasPlaying: boolean, wasMuted: boolean): void {
+  private initMpegtsPlayer(video: HTMLVideoElement, url: string, wasPlaying: boolean, wasMuted: boolean, volume: number): void {
     const mpegts = (window as any).mpegts;
 
     this.player = mpegts.createPlayer({
@@ -468,18 +609,21 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
 
     this.player.attachMediaElement(video);
     this.player.load();
-    video.volume = video.volume;
+    video.volume = volume;
     video.muted = wasMuted;
-    this.playVideo(video, wasPlaying, wasMuted);
+    this.playVideo(video, wasPlaying, wasMuted, volume);
   }
 
-  private playVideo(video: HTMLVideoElement, wasPlaying: boolean, wasMuted: boolean): void {
-    if (wasPlaying) {
-      video.play().catch(() => {});
-    } else {
-      video.play().catch(() => {
-        video.muted = true;
-        video.play().catch(() => {});
+  private playVideo(video: HTMLVideoElement, wasPlaying: boolean, savedMuted: boolean, savedVolume: number): void {
+    video.muted = savedMuted;
+    video.volume = savedVolume;
+
+    const playPromise = video.play();
+
+    if (playPromise !== undefined) {
+      playPromise.then(() => {
+      }).catch((error) => {
+        console.log('🔇 Reproducción bloqueada');
       });
     }
   }
@@ -524,7 +668,6 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
         mpegtsSupported: mpegtsLib?.isSupported()
       });
 
-      // Retry with mpegts if native failed and not already using it
       if (!this.player && mpegtsLib?.isSupported()) {
         console.log('🔄 Reintentando con mpegts.js...');
         const urlToUse = this.streamUrl;
@@ -558,12 +701,15 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   toggleMute() {
-    this.videoElement.nativeElement.muted = !this.videoElement.nativeElement.muted;
+    this.isMuted = !this.isMuted;
+    this.playerState.setMuted(this.isMuted);
+    this.videoElement.nativeElement.muted = this.isMuted;
   }
 
   setVolume(event: any): void {
     const newVolume = parseFloat(event.target.value);
     this.volume = newVolume;
+    this.playerState.setVolume(newVolume);
 
     const percentage = (newVolume * 100);
     event.target.style.setProperty('--value', `${percentage}%`);
@@ -571,6 +717,7 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
     if (this.videoElement?.nativeElement) {
       this.videoElement.nativeElement.volume = newVolume;
       this.isMuted = newVolume === 0;
+      this.playerState.setMuted(this.isMuted);
     }
   }
 

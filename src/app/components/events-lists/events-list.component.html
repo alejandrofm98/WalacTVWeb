@@ -2,6 +2,7 @@
 <div class="events-container">
   <header class="events-header">
     <h1>Contenido IPTV</h1>
+    <p class="subtitle">Explora canales, películas y series en streaming</p>
   </header>
 
   <div class="tab-container">
@@ -9,20 +10,49 @@
       [class.active]="activeTab === 'channels'"
       (click)="switchTab('channels')"
       class="tab-button">
-      Canales ({{ channelsTotal }})
+      <span class="tab-text">Canales</span>
+      <span class="count">{{ channelsTotal | numberFormat }}</span>
     </button>
     <button
       [class.active]="activeTab === 'movies'"
       (click)="switchTab('movies')"
       class="tab-button">
-      Películas ({{ moviesTotal }})
+      <span class="tab-text">Películas</span>
+      <span class="count">{{ moviesTotal | numberFormat }}</span>
     </button>
     <button
       [class.active]="activeTab === 'series'"
       (click)="switchTab('series')"
       class="tab-button">
-      Series ({{ seriesTotal }})
+      <span class="tab-text">Series</span>
+      <span class="count">{{ seriesTotal | numberFormat }}</span>
     </button>
+  </div>
+
+  <div class="search-filters-container">
+    <div class="filters-row">
+      <input
+        type="text"
+        class="search-input"
+        [placeholder]="getSearchPlaceholder()"
+        [(ngModel)]="searchQuery"
+        (input)="onSearchInput($any($event.target).value)"
+      />
+
+      <select [(ngModel)]="selectedGroup" (change)="onFilterChange()" class="filter-select">
+        <option value="">Todos los grupos</option>
+        <option *ngFor="let group of groups" [value]="group">{{ group }}</option>
+      </select>
+
+      <select [(ngModel)]="selectedCountry" (change)="onFilterChange()" class="filter-select">
+        <option value="">Todos los países</option>
+        <option *ngFor="let country of countries" [value]="country">{{ country }}</option>
+      </select>
+
+      <button *ngIf="selectedGroup || selectedCountry || searchQuery" (click)="clearSearch(); clearFilters()" class="clear-btn">
+        Limpiar filtros
+      </button>
+    </div>
   </div>
 
   <div *ngIf="loading && displayedItems === 0" class="loading">
@@ -38,7 +68,7 @@
   <div *ngIf="!loading && !error && activeTab === 'channels' && displayedItems === 0" class="no-events">
     <div class="empty-state">
       <svg class="empty-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
               d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/>
       </svg>
       <h2>No hay canales disponibles</h2>
@@ -48,7 +78,7 @@
   <div *ngIf="!loading && !error && activeTab === 'movies' && displayedItems === 0" class="no-events">
     <div class="empty-state">
       <svg class="empty-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
               d="M7 4v16M17 4v16M3 8h4m10 0h4M3 12h18M3 16h4m10 0h4M4 20h16a1 1 0 001-1V5a1 1 0 00-1-1H4a1 1 0 00-1 1v14a1 1 0 001 1z"/>
       </svg>
       <h2>No hay películas disponibles</h2>
@@ -58,7 +88,7 @@
   <div *ngIf="!loading && !error && activeTab === 'series' && displayedItems === 0" class="no-events">
     <div class="empty-state">
       <svg class="empty-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
               d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/>
       </svg>
       <h2>No hay series disponibles</h2>
@@ -79,7 +109,15 @@
           </svg>
         </div>
         <h3 class="event-title">{{ channel.nombre }}</h3>
-        <p class="event-category" *ngIf="getCategories(channel)">{{ getCategories(channel) }}</p>
+        <div class="event-category" *ngIf="getCategories(channel)">
+          <svg class="event-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"/>
+          </svg>
+          <span>{{ getCategories(channel) }}</span>
+        </div>
+        <div class="event-meta" *ngIf="channel.country">
+          <span>{{ channel.country }}</span>
+        </div>
       </div>
     </div>
   </div>
@@ -98,7 +136,15 @@
           </svg>
         </div>
         <h3 class="event-title">{{ movie.nombre }}</h3>
-        <p class="event-category" *ngIf="getCategories(movie)">{{ getCategories(movie) }}</p>
+        <div class="event-category" *ngIf="getCategories(movie)">
+          <svg class="event-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"/>
+          </svg>
+          <span>{{ getCategories(movie) }}</span>
+        </div>
+        <div class="event-meta" *ngIf="movie.country">
+          <span>{{ movie.country }}</span>
+        </div>
       </div>
     </div>
   </div>
@@ -117,7 +163,15 @@
           </svg>
         </div>
         <h3 class="event-title">{{ serie.nombre }}</h3>
-        <p class="event-category" *ngIf="getCategories(serie)">{{ getCategories(serie) }}</p>
+        <div class="event-category" *ngIf="getCategories(serie)">
+          <svg class="event-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"/>
+          </svg>
+          <span>{{ getCategories(serie) }}</span>
+        </div>
+        <div class="event-meta" *ngIf="serie.country">
+          <span>{{ serie.country }}</span>
+        </div>
       </div>
     </div>
   </div>
@@ -125,7 +179,7 @@
   <div #loadMoreTrigger class="load-more-trigger" *ngIf="hasMoreChannels || hasMoreMovies || hasMoreSeries">
     <div *ngIf="loading && displayedItems > 0" class="loading-more">
       <div class="spinner small"></div>
-      <span>Cargando más...</span>
+      <span>Cargando más contenido...</span>
     </div>
   </div>
 </div>

@@ -31,7 +31,7 @@ export class TvChannelsComponent implements OnInit, AfterViewInit {
   selectedGroup: string = '';
 
   loading = false;
-  skip = 0;
+  page = 1;
   limit = 100;
   total = 0;
   hasMore = true;
@@ -42,7 +42,6 @@ export class TvChannelsComponent implements OnInit, AfterViewInit {
   private observer: IntersectionObserver | null = null;
 
   ngOnInit(): void {
-    console.log('📺 Componente TV Channels iniciado');
     this.loadChannels();
     this.loadGroups();
   }
@@ -87,24 +86,23 @@ export class TvChannelsComponent implements OnInit, AfterViewInit {
 
   loadChannels(reset: boolean = false): void {
     if (reset) {
-      this.skip = 0;
+      this.page = 1;
       this.channels = [];
     }
 
     this.loading = true;
 
-    this.dataService.getChannels(this.skip, this.limit, this.selectedGroup).subscribe({
+    this.dataService.getChannels(this.page, this.limit, this.selectedGroup).subscribe({
       next: (response: PaginatedResponse<IptvChannel>) => {
         this.channels = [...this.channels, ...response.items];
         this.total = response.total;
-        this.skip += response.items.length;
-        this.hasMore = this.skip < this.total;
+        this.page += 1;
+        this.hasMore = response.has_next;
         this.groupChannels();
         this.loading = false;
-        console.log('✅ Canales cargados:', this.channels.length);
       },
       error: (error) => {
-        console.error('❌ Error cargando canales:', error);
+        console.error('Error cargando canales:', error);
         this.loading = false;
       }
     });
@@ -113,11 +111,11 @@ export class TvChannelsComponent implements OnInit, AfterViewInit {
   loadMoreChannels(): void {
     if (!this.hasMore || this.loading) return;
 
-    this.dataService.getChannels(this.skip, this.limit, this.selectedGroup).subscribe({
+    this.dataService.getChannels(this.page, this.limit, this.selectedGroup).subscribe({
       next: (response: PaginatedResponse<IptvChannel>) => {
         this.channels = [...this.channels, ...response.items];
-        this.skip += response.items.length;
-        this.hasMore = this.skip < this.total;
+        this.page += 1;
+        this.hasMore = response.has_next;
         this.groupChannels();
       }
     });
@@ -152,7 +150,6 @@ export class TvChannelsComponent implements OnInit, AfterViewInit {
   }
 
   onChannelClick(channel: IptvChannel): void {
-    console.log('▶️ Canal seleccionado:', channel.nombre);
     this.playerState.setChannel(channel);
     const slug = slugify(channel.nombre);
     this.router.navigate(['/player', slug]);

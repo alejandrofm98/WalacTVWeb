@@ -1,17 +1,22 @@
 import {Component, OnInit, inject, ElementRef, ViewChild, AfterViewInit} from '@angular/core';
 import {CommonModule} from '@angular/common';
 import {Router} from '@angular/router';
+import {FormsModule} from '@angular/forms';
 import {DataService, IptvChannel, IptvMovie, IptvSeries, PaginatedResponse} from '../../services/data.service';
+import {PlayerStateService} from '../../services/player-state.service';
 import {slugify} from '../../utils/slugify';
 import {NavbarComponent} from '../../shared/components/navbar-component/navbar.component';
 import {HttpsPipe} from '../../pipes/https.pipe';
+import {NumberFormatPipe} from '../../pipes/number-format.pipe';
+import {Subject} from 'rxjs';
+import {debounceTime, distinctUntilChanged} from 'rxjs/operators';
 
 type TabType = 'channels' | 'movies' | 'series';
 
 @Component({
   selector: 'app-events-list',
   standalone: true,
-  imports: [CommonModule, NavbarComponent, HttpsPipe],
+  imports: [CommonModule, FormsModule, NavbarComponent, HttpsPipe, NumberFormatPipe],
   templateUrl: './events-list.component.html',
   styleUrls: ['./events-list.component.css']
 })
@@ -29,22 +34,37 @@ export class EventsListComponent implements OnInit, AfterViewInit {
   moviesTotal = 0;
   seriesTotal = 0;
 
-  channelsSkip = 0;
-  moviesSkip = 0;
-  seriesSkip = 0;
-  limit = 50;
+  channelsPage = 1;
+  moviesPage = 1;
+  seriesPage = 1;
+  limit = 80;
 
   hasMoreChannels = true;
   hasMoreMovies = true;
   hasMoreSeries = true;
 
+  selectedGroup = '';
+  selectedCountry = '';
+  groups: string[] = [];
+  countries: string[] = [];
+
+  searchQuery = '';
+  private searchSubject = new Subject<string>();
+
   private dataService = inject(DataService);
   private router = inject(Router);
+  private playerState = inject(PlayerStateService);
   private observer: IntersectionObserver | null = null;
 
   ngOnInit() {
-    this.loadCounts();
     this.loadContent();
+
+    this.searchSubject.pipe(
+      debounceTime(300),
+      distinctUntilChanged()
+    ).subscribe(query => {
+      this.performSearch(query);
+    });
   }
 
   ngAfterViewInit() {
@@ -55,17 +75,6 @@ export class EventsListComponent implements OnInit, AfterViewInit {
     if (this.observer) {
       this.observer.disconnect();
     }
-  }
-
-  private loadCounts() {
-    this.dataService.getCounts().subscribe({
-      next: (counts) => {
-        this.channelsTotal = counts.channels;
-        this.moviesTotal = counts.movies;
-        this.seriesTotal = counts.series;
-      },
-      error: (err) => console.error('Error loading counts:', err)
-    });
   }
 
   private setupInfiniteScroll() {
@@ -96,7 +105,68 @@ export class EventsListComponent implements OnInit, AfterViewInit {
 
   switchTab(tab: TabType) {
     this.activeTab = tab;
-    this.setupInfiniteScroll();
+    this.channelsPage = 1;
+    this.moviesPage = 1;
+    this.seriesPage = 1;
+    this.channels = [];
+    this.movies = [];
+    this.series = [];
+    this.loadFilters();
+    this.loadContent();
+  }
+
+  loadFilters() {
+    this.dataService.getGroups(this.activeTab).subscribe({
+      next: (groups) => this.groups = groups
+    });
+    this.dataService.getCountries(this.activeTab).subscribe({
+      next: (countries) => this.countries = countries.map(c => c.name)
+    });
+  }
+
+  onFilterChange() {
+    this.channelsPage = 1;
+    this.moviesPage = 1;
+    this.seriesPage = 1;
+    this.loadContent();
+  }
+
+  clearFilters() {
+    this.selectedGroup = '';
+    this.selectedCountry = '';
+    this.channelsPage = 1;
+    this.moviesPage = 1;
+    this.seriesPage = 1;
+    this.loadContent();
+  }
+
+  onSearchInput(query: string) {
+    this.searchQuery = query;
+    this.searchSubject.next(query);
+  }
+
+  performSearch(query: string) {
+    this.channelsPage = 1;
+    this.moviesPage = 1;
+    this.seriesPage = 1;
+    this.loadContent();
+  }
+
+  clearSearch() {
+    this.searchQuery = '';
+    this.channelsPage = 1;
+    this.moviesPage = 1;
+    this.seriesPage = 1;
+    this.loadContent();
+  }
+
+  getSearchPlaceholder(): string {
+    switch (this.activeTab) {
+      case 'channels': return 'Buscar canales por nombre o grupo...';
+      case 'movies': return 'Buscar películas por nombre o grupo...';
+      case 'series': return 'Buscar series por nombre o grupo...';
+      default: return 'Buscar...';
+    }
   }
 
   loadContent() {
@@ -104,13 +174,13 @@ export class EventsListComponent implements OnInit, AfterViewInit {
     this.error = null;
 
     if (this.activeTab === 'channels') {
-      this.channelsSkip = 0;
+      this.channelsPage = 1;
       this.loadMoreChannels(true);
     } else if (this.activeTab === 'movies') {
-      this.moviesSkip = 0;
+      this.moviesPage = 1;
       this.loadMoreMovies(true);
     } else {
-      this.seriesSkip = 0;
+      this.seriesPage = 1;
       this.loadMoreSeries(true);
     }
   }
@@ -120,12 +190,12 @@ export class EventsListComponent implements OnInit, AfterViewInit {
       this.channels = [];
     }
 
-    this.dataService.getChannels(this.channelsSkip, this.limit).subscribe({
+    this.dataService.getChannels(this.channelsPage, this.limit, this.selectedGroup, this.selectedCountry, this.searchQuery).subscribe({
       next: (response: PaginatedResponse<IptvChannel>) => {
         this.channels = [...this.channels, ...response.items];
         this.channelsTotal = response.total;
-        this.channelsSkip += response.items.length;
-        this.hasMoreChannels = this.channelsSkip < this.channelsTotal;
+        this.channelsPage += 1;
+        this.hasMoreChannels = response.has_next;
         this.loading = false;
       },
       error: (err) => {
@@ -141,12 +211,12 @@ export class EventsListComponent implements OnInit, AfterViewInit {
       this.movies = [];
     }
 
-    this.dataService.getMovies(this.moviesSkip, this.limit).subscribe({
+    this.dataService.getMovies(this.moviesPage, this.limit, this.selectedGroup, this.selectedCountry, this.searchQuery).subscribe({
       next: (response: PaginatedResponse<IptvMovie>) => {
         this.movies = [...this.movies, ...response.items];
         this.moviesTotal = response.total;
-        this.moviesSkip += response.items.length;
-        this.hasMoreMovies = this.moviesSkip < this.moviesTotal;
+        this.moviesPage += 1;
+        this.hasMoreMovies = response.has_next;
         this.loading = false;
       },
       error: (err) => {
@@ -162,12 +232,12 @@ export class EventsListComponent implements OnInit, AfterViewInit {
       this.series = [];
     }
 
-    this.dataService.getSeries(this.seriesSkip, this.limit).subscribe({
+    this.dataService.getSeries(this.seriesPage, this.limit, this.selectedGroup, this.selectedCountry, this.searchQuery).subscribe({
       next: (response: PaginatedResponse<IptvSeries>) => {
         this.series = [...this.series, ...response.items];
         this.seriesTotal = response.total;
-        this.seriesSkip += response.items.length;
-        this.hasMoreSeries = this.seriesSkip < this.seriesTotal;
+        this.seriesPage += 1;
+        this.hasMoreSeries = response.has_next;
         this.loading = false;
       },
       error: (err) => {
@@ -179,6 +249,7 @@ export class EventsListComponent implements OnInit, AfterViewInit {
   }
 
   onChannelClick(channel: IptvChannel) {
+    this.playerState.setChannel(channel);
     this.router.navigate(['/player', slugify(channel.nombre)]);
   }
 
