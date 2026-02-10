@@ -13,7 +13,8 @@ export interface IptvChannel {
   grupo: string;
   country: string;
   provider_id: string;
-  stream_url: string;
+  url: string;
+  stream_url?: string;
 }
 
 export interface IptvMovie {
