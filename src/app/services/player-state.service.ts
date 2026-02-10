@@ -1,8 +1,14 @@
 import { Injectable } from '@angular/core';
-import { IptvChannel } from './data.service';
+import { IptvChannel, IptvMovie, IptvSeries } from './data.service';
+
+export type ContentType = 'channels' | 'movies' | 'series';
+export type ContentItem = IptvChannel | IptvMovie | IptvSeries;
 
 export interface PlayerState {
   channel: IptvChannel | null;
+  movie: IptvMovie | null;
+  series: IptvSeries | null;
+  contentType: ContentType;
   volume: number;
   isMuted: boolean;
 }
@@ -14,18 +20,65 @@ export class PlayerStateService {
   private readonly STORAGE_KEY = 'walactv_player_state';
   private state: PlayerState = {
     channel: null,
+    movie: null,
+    series: null,
+    contentType: 'channels',
     volume: 1,
     isMuted: false
   };
 
   setChannel(channel: IptvChannel): void {
     this.state.channel = channel;
+    this.state.movie = null;
+    this.state.series = null;
+    this.state.contentType = 'channels';
+    this.saveState();
+  }
+
+  setMovie(movie: IptvMovie): void {
+    this.state.movie = movie;
+    this.state.channel = null;
+    this.state.series = null;
+    this.state.contentType = 'movies';
+    this.saveState();
+  }
+
+  setSeries(series: IptvSeries): void {
+    this.state.series = series;
+    this.state.channel = null;
+    this.state.movie = null;
+    this.state.contentType = 'series';
     this.saveState();
   }
 
   getChannel(): IptvChannel | null {
     this.loadState();
     return this.state.channel;
+  }
+
+  getMovie(): IptvMovie | null {
+    this.loadState();
+    return this.state.movie;
+  }
+
+  getSeries(): IptvSeries | null {
+    this.loadState();
+    return this.state.series;
+  }
+
+  getCurrentItem(): ContentItem | null {
+    this.loadState();
+    switch (this.state.contentType) {
+      case 'channels': return this.state.channel;
+      case 'movies': return this.state.movie;
+      case 'series': return this.state.series;
+      default: return null;
+    }
+  }
+
+  getContentType(): ContentType {
+    this.loadState();
+    return this.state.contentType;
   }
 
   getVolume(): number {
@@ -51,6 +104,9 @@ export class PlayerStateService {
   clear(): void {
     this.state = {
       channel: null,
+      movie: null,
+      series: null,
+      contentType: 'channels',
       volume: 1,
       isMuted: false
     };

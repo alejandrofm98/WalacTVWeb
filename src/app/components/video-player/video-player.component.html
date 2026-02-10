@@ -2,12 +2,12 @@
 
 <div class="player-wrapper">
   <div class="header-info">
-    <div class="channel-number-badge" *ngIf="currentChannel?.num">
-      {{ currentChannel?.num }}
+    <div class="channel-number-badge" *ngIf="currentItem?.num">
+      {{ currentItem?.num }}
     </div>
     <h1 class="event-title">{{ eventTitle }}</h1>
-    <div class="channel-group-badge" *ngIf="currentChannel?.grupo">
-      {{ currentChannel?.grupo }}
+    <div class="channel-group-badge" *ngIf="currentItem?.grupo">
+      {{ currentItem?.grupo }}
     </div>
   </div>
 
@@ -27,10 +27,10 @@
 
     <div class="channel-overlay" [class.visible]="showChannelOverlay && isFullscreen">
       <div class="channel-overlay-content">
-        <div class="channel-overlay-number" *ngIf="currentChannel?.num">{{ currentChannel?.num }}</div>
+        <div class="channel-overlay-number" *ngIf="currentItem?.num">{{ currentItem?.num }}</div>
         <div class="channel-overlay-icon">📺</div>
-        <div class="channel-overlay-name">{{ currentChannel?.nombre }}</div>
-        <div class="channel-overlay-group">{{ currentChannel?.grupo }}</div>
+        <div class="channel-overlay-name">{{ currentItem?.nombre }}</div>
+        <div class="channel-overlay-group">{{ currentItem?.grupo }}</div>
       </div>
     </div>
 
@@ -49,16 +49,16 @@
     <div class="channel-navigation" *ngIf="isChannelMode && !isFullscreen">
       <button
         class="nav-arrow nav-arrow-left"
-        (click)="previousChannel()"
-        *ngIf="hasPreviousChannel"
+        (click)="previousItem()"
+        *ngIf="hasPreviousItem"
         [class.show-controls]="showControls">
         ◀
       </button>
 
       <button
         class="nav-arrow nav-arrow-right"
-        (click)="nextChannel()"
-        *ngIf="hasNextChannel"
+        (click)="nextItem()"
+        *ngIf="hasNextItem"
         [class.show-controls]="showControls">
         ▶
       </button>

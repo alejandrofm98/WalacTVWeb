@@ -56,6 +56,13 @@ export interface CountryResponse {
   name: string;
 }
 
+export interface ContentStats {
+  channels: number;
+  movies: number;
+  series: number;
+  total: number;
+}
+
 @Injectable({
   providedIn: 'root'
 })
@@ -167,8 +174,13 @@ export class DataService {
     );
   }
 
-  getCounts(): Observable<{ channels: number; movies: number; series: number }> {
-    return of({ channels: 0, movies: 0, series: 0 });
+  getContentStats(): Observable<ContentStats> {
+    return this.http.get<ContentStats>(
+      `${this.apiUrl}/api/content/stats`,
+      { headers: this.getHeaders() }
+    ).pipe(
+      catchError(() => of({ channels: 0, movies: 0, series: 0, total: 0 }))
+    );
   }
 
   getStreamUrl(type: 'live' | 'movie' | 'series', streamId: string): string {

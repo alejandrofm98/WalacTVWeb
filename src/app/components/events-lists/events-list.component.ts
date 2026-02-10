@@ -2,7 +2,7 @@ import {Component, OnInit, inject, ElementRef, ViewChild, AfterViewInit} from '@
 import {CommonModule} from '@angular/common';
 import {Router} from '@angular/router';
 import {FormsModule} from '@angular/forms';
-import {DataService, IptvChannel, IptvMovie, IptvSeries, PaginatedResponse} from '../../services/data.service';
+import {DataService, IptvChannel, IptvMovie, IptvSeries, PaginatedResponse, ContentStats} from '../../services/data.service';
 import {PlayerStateService} from '../../services/player-state.service';
 import {slugify} from '../../utils/slugify';
 import {NavbarComponent} from '../../shared/components/navbar-component/navbar.component';
@@ -57,6 +57,7 @@ export class EventsListComponent implements OnInit, AfterViewInit {
   private observer: IntersectionObserver | null = null;
 
   ngOnInit() {
+    this.loadContentStats();
     this.loadContent();
 
     this.searchSubject.pipe(
@@ -64,6 +65,19 @@ export class EventsListComponent implements OnInit, AfterViewInit {
       distinctUntilChanged()
     ).subscribe(query => {
       this.performSearch(query);
+    });
+  }
+
+  private loadContentStats(): void {
+    this.dataService.getContentStats().subscribe({
+      next: (stats: ContentStats) => {
+        this.channelsTotal = stats.channels;
+        this.moviesTotal = stats.movies;
+        this.seriesTotal = stats.series;
+      },
+      error: (error) => {
+        console.error('Error loading content stats:', error);
+      }
     });
   }
 
@@ -254,15 +268,13 @@ export class EventsListComponent implements OnInit, AfterViewInit {
   }
 
   onMovieClick(movie: IptvMovie) {
-    if (movie.stream_url) {
-      window.open(movie.stream_url, '_blank');
-    }
+    this.playerState.setMovie(movie);
+    this.router.navigate(['/player', slugify(movie.nombre)]);
   }
 
   onSeriesClick(series: IptvSeries) {
-    if (series.stream_url) {
-      window.open(series.stream_url, '_blank');
-    }
+    this.playerState.setSeries(series);
+    this.router.navigate(['/player', slugify(series.nombre)]);
   }
 
   getPosterUrl(item: IptvChannel | IptvMovie | IptvSeries): string {
