@@ -65,8 +65,57 @@
     </div>
 
     <div class="controls" [class.visible]="showControls">
+      <!-- VOD Progress Bar (only for movies/series) -->
+      <div class="progress-bar-container" *ngIf="isVodContent">
+        <div class="time-display time-current">{{ formatTime(currentTime) }}</div>
+        
+        <div class="seek-bar-wrapper"
+             #seekBar
+             (click)="onSeekBarClick($event)"
+             (mousedown)="onSeekBarMouseDown($event)"
+             (mousemove)="onSeekBarMouseMove($event)"
+             (mouseleave)="onSeekBarMouseLeave()"
+             (touchstart)="onSeekBarTouchStart($event)"
+             (touchmove)="onSeekBarTouchMove($event)"
+             (touchend)="onSeekBarTouchEnd()">
+          
+          <div class="seek-bar-track"></div>
+          <div class="seek-bar-buffered" [style.width.%]="(buffered / duration) * 100"></div>
+          <div class="seek-bar-progress" [style.width.%]="(currentTime / duration) * 100"></div>
+          
+          <div class="seek-bar-thumb" 
+               [class.dragging]="isSeeking"
+               [style.left.%]="(currentTime / duration) * 100">
+            <div class="seek-bar-thumb-inner"></div>
+          </div>
+          
+          <!-- Hover Tooltip -->
+          <div class="seek-tooltip" 
+               *ngIf="seekTooltipVisible"
+               [class.visible]="seekTooltipVisible"
+               [style.left.%]="seekTooltipX">
+            <span class="seek-tooltip-time">{{ formatTime(seekTooltipTime) }}</span>
+            <div class="seek-tooltip-arrow"></div>
+          </div>
+        </div>
+        
+        <div class="time-display time-duration">{{ formatTime(duration) }}</div>
+      </div>
+
       <div class="controls-wrapper">
         <div class="controls-left">
+          <!-- Skip Backward (-10s) - only for VOD -->
+          <button
+            *ngIf="isVodContent"
+            class="control-button skip-button"
+            (click)="skipBackward(10)"
+            [attr.aria-label]="'Saltar 10s atrás'">
+            <svg viewBox="0 0 24 24" fill="currentColor">
+              <path d="M11 18V6l-8.5 6 8.5 6zm.5-6l8.5 6V6l-8.5 6z"/>
+            </svg>
+            <span class="skip-label">-10</span>
+          </button>
+
           <button
             class="control-button play-button"
             (click)="togglePlayPause()"
@@ -79,6 +128,18 @@
                  fill="currentColor">
               <path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z"/>
             </svg>
+          </button>
+
+          <!-- Skip Forward (+10s) - only for VOD -->
+          <button
+            *ngIf="isVodContent"
+            class="control-button skip-button"
+            (click)="skipForward(10)"
+            [attr.aria-label]="'Saltar 10s adelante'">
+            <svg viewBox="0 0 24 24" fill="currentColor">
+              <path d="M4 18l8.5-6L4 6v12zm9-12v12l8.5-6L13 6z"/>
+            </svg>
+            <span class="skip-label">+10</span>
           </button>
 
           <div class="volume-control">

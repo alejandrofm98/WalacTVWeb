@@ -80,6 +80,22 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
   private itemsLoaded = false;
   private boundKeyboardHandler: ((event: KeyboardEvent) => void) | null = null;
 
+  // === VOD Progress Bar State ===
+  currentTime = 0;
+  duration = 0;
+  buffered = 0;
+  isSeeking = false;
+  seekTooltipTime = 0;
+  seekTooltipVisible = false;
+  seekTooltipX = 0;
+  private progressListenersAttached = false;
+  private boundTimeUpdateHandler?: () => void;
+  private boundProgressHandler?: () => void;
+  private boundLoadedMetadataHandler?: () => void;
+  private boundSeekedHandler?: () => void;
+  private boundSeekingHandler?: () => void;
+  @ViewChild('seekBar') seekBarElement!: ElementRef<HTMLDivElement>;
+
   private readonly BATCH_SIZE = 100;
   private readonly PRELOAD_THRESHOLD = 20;
   private currentPage = 1;
@@ -97,12 +113,31 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
 
   @HostListener('document:keydown', ['$event'])
   async handleKeyboardEvent(event: KeyboardEvent): Promise<void> {
-    if (!this.isChannelMode || this.allItems.length < 2) return;
-
     const target = event.target as HTMLElement;
     if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
       return;
     }
+
+    // VOD Seeking: ArrowLeft/ArrowRight seek in movie/series
+    if (this.isVodContent) {
+      switch (event.key) {
+        case 'ArrowLeft':
+        case 'Left':
+          event.preventDefault();
+          event.stopPropagation();
+          this.skipBackward(5);
+          return;
+        case 'ArrowRight':
+        case 'Right':
+          event.preventDefault();
+          event.stopPropagation();
+          this.skipForward(5);
+          return;
+      }
+    }
+
+    // Channel Navigation: only for channels
+    if (!this.isChannelMode || this.allItems.length < 2) return;
 
     switch (event.key) {
       case 'ArrowRight':
@@ -547,6 +582,138 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
     return this.isChannelMode && this.allItems.length > 1;
   }
 
+  // === VOD Content Check ===
+  get isVodContent(): boolean {
+    return this.contentType === 'movies' || this.contentType === 'series';
+  }
+
+  // === Time Formatting Utility ===
+  formatTime(seconds: number): string {
+    if (isNaN(seconds) || seconds < 0) return '0:00';
+    const hours = Math.floor(seconds / 3600);
+    const mins = Math.floor((seconds % 3600) / 60);
+    const secs = Math.floor(seconds % 60);
+    
+    if (hours > 0) {
+      return `${hours}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    }
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  }
+
+  // === Seek Bar Interaction Methods ===
+  onSeekBarClick(event: MouseEvent): void {
+    if (!this.isVodContent || !this.videoElement?.nativeElement) return;
+    
+    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+    const percent = (event.clientX - rect.left) / rect.width;
+    const time = percent * this.duration;
+    
+    this.videoElement.nativeElement.currentTime = time;
+    this.currentTime = time;
+    this.cdr.markForCheck();
+  }
+
+  onSeekBarMouseDown(event: MouseEvent): void {
+    if (!this.isVodContent) return;
+    
+    this.isSeeking = true;
+    this.onSeekBarClick(event);
+    
+    const moveHandler = (e: MouseEvent) => {
+      if (!this.seekBarElement?.nativeElement) return;
+      const rect = this.seekBarElement.nativeElement.getBoundingClientRect();
+      const percent = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+      const time = percent * this.duration;
+      this.videoElement.nativeElement.currentTime = time;
+      this.currentTime = time;
+      this.cdr.markForCheck();
+    };
+    
+    const upHandler = () => {
+      this.isSeeking = false;
+      document.removeEventListener('mousemove', moveHandler);
+      document.removeEventListener('mouseup', upHandler);
+    };
+    
+    document.addEventListener('mousemove', moveHandler);
+    document.addEventListener('mouseup', upHandler);
+    event.stopPropagation();
+  }
+
+  onSeekBarTouchStart(event: TouchEvent): void {
+    if (!this.isVodContent) return;
+    
+    this.isSeeking = true;
+    const touch = event.touches[0];
+    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+    const percent = (touch.clientX - rect.left) / rect.width;
+    const time = Math.max(0, Math.min(this.duration, percent * this.duration));
+    
+    if (this.videoElement?.nativeElement) {
+      this.videoElement.nativeElement.currentTime = time;
+      this.currentTime = time;
+    }
+    this.cdr.markForCheck();
+    event.stopPropagation();
+  }
+
+  onSeekBarTouchMove(event: TouchEvent): void {
+    if (!this.isVodContent || !this.isSeeking || !this.seekBarElement?.nativeElement) return;
+    
+    event.preventDefault();
+    const touch = event.touches[0];
+    const rect = this.seekBarElement.nativeElement.getBoundingClientRect();
+    const percent = Math.max(0, Math.min(1, (touch.clientX - rect.left) / rect.width));
+    const time = percent * this.duration;
+    
+    if (this.videoElement?.nativeElement) {
+      this.videoElement.nativeElement.currentTime = time;
+      this.currentTime = time;
+    }
+    this.cdr.markForCheck();
+  }
+
+  onSeekBarTouchEnd(): void {
+    this.isSeeking = false;
+  }
+
+  onSeekBarMouseMove(event: MouseEvent): void {
+    if (!this.isVodContent) return;
+    
+    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+    const percent = (event.clientX - rect.left) / rect.width;
+    const clampedPercent = Math.max(0, Math.min(1, percent));
+    
+    this.seekTooltipTime = clampedPercent * this.duration;
+    this.seekTooltipX = clampedPercent * 100;
+    this.seekTooltipVisible = true;
+    this.cdr.markForCheck();
+  }
+
+  onSeekBarMouseLeave(): void {
+    this.seekTooltipVisible = false;
+    this.cdr.markForCheck();
+  }
+
+  // === Skip Methods ===
+  skipForward(seconds: number = 10): void {
+    if (!this.isVodContent || !this.videoElement?.nativeElement) return;
+    
+    const newTime = Math.min(this.duration, this.currentTime + seconds);
+    this.videoElement.nativeElement.currentTime = newTime;
+    this.currentTime = newTime;
+    this.cdr.markForCheck();
+  }
+
+  skipBackward(seconds: number = 10): void {
+    if (!this.isVodContent || !this.videoElement?.nativeElement) return;
+    
+    const newTime = Math.max(0, this.currentTime - seconds);
+    this.videoElement.nativeElement.currentTime = newTime;
+    this.currentTime = newTime;
+    this.cdr.markForCheck();
+  }
+
   private loadStreamFromItem(): void {
     if (!this.currentItem?.id) {
       console.error('No hay item seleccionado');
@@ -596,7 +763,11 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
 
     const parts = originalUrl.split('/');
     const lastPart = parts[parts.length - 1];
-    const streamId = lastPart.replace(/\.(ts|m3u8|mp4|mkv)$/i, '');
+
+    // Extract the file extension from the original URL
+    const extMatch = lastPart.match(/\.(ts|m3u8|mp4|mkv|avi)$/i);
+    const extension = extMatch ? extMatch[0] : '';
+    const streamId = lastPart.replace(/\.(ts|m3u8|mp4|mkv|avi)$/i, '');
 
     let baseUrl = 'https://iptv.walerike.com';
 
@@ -612,6 +783,13 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
       default:
         // Channels use base URL without additional path
         break;
+    }
+
+    // For movies/series, preserve the original extension so the server
+    // returns the correct format. Without it, the server may return raw
+    // binary that HLS.js can't parse, crashing the browser.
+    if (this.contentType !== 'channels' && extension) {
+      return `${baseUrl}/${username}/${password}/${streamId}${extension}`;
     }
 
     return `${baseUrl}/${username}/${password}/${streamId}`;
@@ -675,6 +853,29 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
         video.removeEventListener('keydown', this.boundKeyboardHandler);
       }
     }
+
+    // Cleanup VOD progress listeners
+    if (this.boundTimeUpdateHandler || this.boundProgressHandler || 
+        this.boundLoadedMetadataHandler || this.boundSeekedHandler || this.boundSeekingHandler) {
+      const video = this.videoElement?.nativeElement;
+      if (video) {
+        if (this.boundTimeUpdateHandler) {
+          video.removeEventListener('timeupdate', this.boundTimeUpdateHandler);
+        }
+        if (this.boundProgressHandler) {
+          video.removeEventListener('progress', this.boundProgressHandler);
+        }
+        if (this.boundLoadedMetadataHandler) {
+          video.removeEventListener('loadedmetadata', this.boundLoadedMetadataHandler);
+        }
+        if (this.boundSeekedHandler) {
+          video.removeEventListener('seeked', this.boundSeekedHandler);
+        }
+        if (this.boundSeekingHandler) {
+          video.removeEventListener('seeking', this.boundSeekingHandler);
+        }
+      }
+    }
   }
 
   private initializePlayer(autoplay: boolean) {
@@ -715,40 +916,37 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
 
     const libs = checkLibs();
 
-    // Canales usan MPEG-TS (transport stream)
+    // 1. Canales sin extension explicita -> MPEG-TS (transport stream)
     if (isChannel && !isHLS && !isMP4 && !isMKV && libs.mpegts && libs.mpegts.isSupported()) {
       console.log('Usando MPEG-TS player para canal');
       this.initMpegtsPlayer(video, this.streamUrl, autoplay, savedMuted, savedVolume);
     }
-    // Películas y series usan HLS siempre
-    else if (!isChannel && libs.Hls && libs.Hls.isSupported()) {
-      console.log('Usando HLS player para pelicula/serie');
-      this.initHlsPlayer(video, this.streamUrl, autoplay, savedMuted, savedVolume);
-    }
-    // Fallback para HLS
+    // 2. URLs con .m3u8 (HLS) -> HLS.js
     else if (isHLS && libs.Hls && libs.Hls.isSupported()) {
-      console.log('Usando HLS player');
+      console.log('Usando HLS player para stream .m3u8');
       this.initHlsPlayer(video, this.streamUrl, autoplay, savedMuted, savedVolume);
     }
-    // Video nativo para MP4/MKV
-    else if ((isMP4 || isMKV) && (video.canPlayType('video/mp4') || video.canPlayType('video/webm'))) {
-      console.log('Usando HTML5 video nativo');
+    // 3. URLs con .m3u8 (HLS) -> HLS nativo del navegador (Safari)
+    else if (isHLS && video.canPlayType('application/vnd.apple.mpegurl')) {
+      console.log('Usando HLS nativo del navegador');
       video.src = this.streamUrl;
       video.muted = savedMuted;
       video.volume = savedVolume;
       video.load();
       this.playVideo(video, autoplay, savedMuted, savedVolume);
     }
-    // HLS nativo del navegador
-    else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-      console.log('Usando HLS nativo');
+    // 4. MP4/MKV o peliculas/series sin extension HLS -> HTML5 video nativo
+    //    Esto es lo correcto: el navegador descarga progresivamente y reproduce
+    //    sin cargar todo en memoria como hacia HLS.js con archivos no-HLS.
+    else if (isMP4 || isMKV || !isChannel) {
+      console.log('Usando HTML5 video nativo para', this.contentType);
       video.src = this.streamUrl;
       video.muted = savedMuted;
       video.volume = savedVolume;
       video.load();
       this.playVideo(video, autoplay, savedMuted, savedVolume);
     }
-    // Fallback final
+    // 5. Fallback final
     else {
       console.log('Usando HTML5 fallback');
       video.src = this.streamUrl;
@@ -763,18 +961,24 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
 
   private initHlsPlayer(video: HTMLVideoElement, url: string, autoplay: boolean, wasMuted: boolean, volume: number): void {
     const Hls = (window as any).Hls;
+    const isLiveContent = this.contentType === 'channels';
 
-    this.hlsPlayer = new Hls({
+    const hlsConfig: Record<string, unknown> = {
       enableWorker: true,
-      lowLatencyMode: true,
-      backBufferLength: 90,
-      xhrSetup: (xhr: XMLHttpRequest, url: string) => {
-        // Añadir timestamp para evitar caché en reintentos
+      // lowLatencyMode solo para contenido en vivo, no para VOD (peliculas/series)
+      lowLatencyMode: isLiveContent,
+      backBufferLength: isLiveContent ? 90 : 30,
+      // Para VOD: permitir buffering mas agresivo para evitar stuttering
+      maxBufferLength: isLiveContent ? 30 : 60,
+      maxMaxBufferLength: isLiveContent ? 60 : 120,
+      xhrSetup: (xhr: XMLHttpRequest, _url: string) => {
         if (this.retryCount > 0) {
           console.log(`Reintento ${this.retryCount} con timestamp para evitar caché`);
         }
       }
-    });
+    };
+
+    this.hlsPlayer = new Hls(hlsConfig);
 
     this.hlsPlayer.loadSource(url);
     this.hlsPlayer.attachMedia(video);
@@ -976,6 +1180,60 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
         this.retryCount = 0;
       }
     });
+
+    // === VOD Progress Bar Event Listeners ===
+    if (this.isVodContent && !this.progressListenersAttached) {
+      this.boundTimeUpdateHandler = () => {
+        if (!this.isSeeking) {
+          this.currentTime = video.currentTime;
+          this.cdr.markForCheck();
+        }
+      };
+      
+      this.boundProgressHandler = () => {
+        if (video.buffered.length > 0) {
+          this.buffered = video.buffered.end(video.buffered.length - 1);
+          this.cdr.markForCheck();
+        }
+      };
+      
+      this.boundLoadedMetadataHandler = () => {
+        this.duration = video.duration;
+        this.cdr.markForCheck();
+      };
+      
+      this.boundSeekedHandler = () => {
+        this.currentTime = video.currentTime;
+        this.isSeeking = false;
+        this.cdr.markForCheck();
+      };
+      
+      this.boundSeekingHandler = () => {
+        this.isSeeking = true;
+        this.currentTime = video.currentTime;
+        this.cdr.markForCheck();
+      };
+
+      video.addEventListener('timeupdate', this.boundTimeUpdateHandler);
+      video.addEventListener('progress', this.boundProgressHandler);
+      video.addEventListener('loadedmetadata', this.boundLoadedMetadataHandler);
+      video.addEventListener('seeked', this.boundSeekedHandler);
+      video.addEventListener('seeking', this.boundSeekingHandler);
+      
+      this.progressListenersAttached = true;
+      
+      // Initialize values if already available
+      if (video.duration) {
+        this.duration = video.duration;
+      }
+      if (video.currentTime) {
+        this.currentTime = video.currentTime;
+      }
+      if (video.buffered.length > 0) {
+        this.buffered = video.buffered.end(video.buffered.length - 1);
+      }
+      this.cdr.markForCheck();
+    }
 
     video.addEventListener('error', (e) => {
       const errorCode = (video.error as MediaError | null)?.code;
