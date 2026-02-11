@@ -1,8 +1,9 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpParams, HttpHeaders } from '@angular/common/http';
 import { Observable, of } from 'rxjs';
-import { catchError, map } from 'rxjs/operators';
+import { catchError, map, tap } from 'rxjs/operators';
 import { AuthService } from '../services/auth.service';
+import { CacheService } from './cache.service';
 import { environment } from '../../environments/environment';
 
 export interface IptvChannel {
@@ -70,6 +71,7 @@ export class DataService {
   private http = inject(HttpClient);
   private apiUrl = environment.iptvApiUrl.replace(/\/+$/, '');
   private authService = inject(AuthService);
+  private cacheService = inject(CacheService);
 
   private getHeaders(): HttpHeaders {
     const token = this.authService.getToken();
@@ -154,22 +156,42 @@ export class DataService {
     );
   }
 
-  getGroups(contentType: 'channels' | 'movies' | 'series' = 'channels'): Observable<string[]> {
+  getGroups(contentType: 'channels' | 'movies' | 'series' = 'channels', country?: string): Observable<string[]> {
+    const cacheKey = `groups_${contentType}_${country || 'all'}`;
+    const cached = this.cacheService.get<string[]>(cacheKey);
+
+    if (cached) {
+      return of(cached);
+    }
+
+    let url = `${this.apiUrl}/api/content/groups?content_type=${contentType}`;
+    if (country) {
+      url += `&countries=${country}`;
+    }
     return this.http.get<{ groups: string[] }>(
-      `${this.apiUrl}/api/content/groups?content_type=${contentType}`,
+      url,
       { headers: this.getHeaders() }
     ).pipe(
       map(response => response.groups || []),
+      tap(groups => this.cacheService.set(cacheKey, groups)),
       catchError(() => of([]))
     );
   }
 
   getCountries(contentType: 'channels' | 'movies' | 'series' = 'channels'): Observable<CountryResponse[]> {
+    const cacheKey = `countries_${contentType}`;
+    const cached = this.cacheService.get<CountryResponse[]>(cacheKey);
+
+    if (cached) {
+      return of(cached);
+    }
+
     return this.http.get<{ countries: CountryResponse[] }>(
       `${this.apiUrl}/api/content/countries?content_type=${contentType}`,
       { headers: this.getHeaders() }
     ).pipe(
       map(response => response.countries || []),
+      tap(countries => this.cacheService.set(cacheKey, countries)),
       catchError(() => of([]))
     );
   }

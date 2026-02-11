@@ -39,15 +39,57 @@
         (input)="onSearchInput($any($event.target).value)"
       />
 
-      <select [(ngModel)]="selectedGroup" (change)="onFilterChange()" class="filter-select">
-        <option value="">Todos los grupos</option>
-        <option *ngFor="let group of groups" [value]="group">{{ group }}</option>
-      </select>
+      <div class="searchable-select" [class.open]="isCountryOpen">
+        <div class="select-trigger" (click)="toggleCountry()">
+          <span class="select-value">{{ selectedCountry ? getCountryName(selectedCountry) : 'Todos los países' }}</span>
+          <svg class="select-arrow" [class.open]="isCountryOpen" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+          </svg>
+        </div>
+        <div class="select-dropdown" *ngIf="isCountryOpen">
+          <input
+            #countrySearchInput
+            type="text"
+            class="select-search"
+            placeholder="Buscar país..."
+            [(ngModel)]="countrySearch"
+            (click)="$event.stopPropagation()"
+            (input)="$event.stopPropagation()"
+            (keydown)="onCountryKeydown($event)"
+          />
+          <div class="select-options">
+            <div class="select-option" *ngIf="!countrySearch || 'todos los países'.includes(countrySearch.toLowerCase())" [class.selected]="!selectedCountry" (click)="selectCountry('')">Todos los países</div>
+            <div class="select-option" *ngFor="let country of filteredCountries" [class.selected]="selectedCountry === country.code" (click)="selectCountry(country.code)">{{ country.name }}</div>
+            <div class="select-option empty" *ngIf="(filteredCountries.length === 0 && !countrySearch) || (filteredCountries.length === 0 && countrySearch && !'todos los países'.includes(countrySearch.toLowerCase()))">No se encontraron países</div>
+          </div>
+        </div>
+      </div>
 
-      <select [(ngModel)]="selectedCountry" (change)="onFilterChange()" class="filter-select">
-        <option value="">Todos los países</option>
-        <option *ngFor="let country of countries" [value]="country">{{ country }}</option>
-      </select>
+      <div class="searchable-select group-select" [class.open]="isGroupOpen">
+        <div class="select-trigger" (click)="toggleGroup()" [title]="selectedGroup || 'Todos los grupos'">
+          <span class="select-value">{{ selectedGroup || 'Todos los grupos' }}</span>
+          <svg class="select-arrow" [class.open]="isGroupOpen" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+          </svg>
+        </div>
+        <div class="select-dropdown dropdown-wide" *ngIf="isGroupOpen">
+          <input
+            #groupSearchInput
+            type="text"
+            class="select-search"
+            placeholder="Buscar grupo..."
+            [(ngModel)]="groupSearch"
+            (click)="$event.stopPropagation()"
+            (input)="$event.stopPropagation()"
+            (keydown)="onGroupKeydown($event)"
+          />
+          <div class="select-options options-multiline">
+            <div class="select-option option-multiline" *ngIf="!groupSearch || 'todos los grupos'.includes(groupSearch.toLowerCase())" [class.selected]="!selectedGroup" (click)="selectGroup('')">Todos los grupos</div>
+            <div class="select-option option-multiline" *ngFor="let group of filteredGroups" [class.selected]="selectedGroup === group" (click)="selectGroup(group)">{{ group }}</div>
+            <div class="select-option option-multiline empty" *ngIf="(filteredGroups.length === 0 && !groupSearch) || (filteredGroups.length === 0 && groupSearch && !'todos los grupos'.includes(groupSearch.toLowerCase()))">No se encontraron grupos</div>
+          </div>
+        </div>
+      </div>
 
       <button *ngIf="selectedGroup || selectedCountry || searchQuery" (click)="clearSearch(); clearFilters()" class="clear-btn">
         Limpiar filtros
@@ -55,9 +97,12 @@
     </div>
   </div>
 
-  <div *ngIf="loading && displayedItems === 0" class="loading">
-    <div class="spinner"></div>
-    <p>Cargando contenido...</p>
+  <div *ngIf="loading && displayedItems === 0" class="skeleton-grid">
+    <div *ngFor="let item of [1,2,3,4,5,6,7,8]" class="skeleton-card">
+      <div class="skeleton-image"></div>
+      <div class="skeleton-title"></div>
+      <div class="skeleton-meta"></div>
+    </div>
   </div>
 
   <div *ngIf="error && displayedItems === 0" class="error">
@@ -101,8 +146,8 @@
       class="event-card"
       (click)="onChannelClick(channel)">
       <div class="event-content">
-        <img *ngIf="getPosterUrl(channel)" [src]="getPosterUrl(channel) | https" alt="{{ channel.nombre }}" class="poster-image">
-        <div class="poster-placeholder" *ngIf="!getPosterUrl(channel)">
+        <img *ngIf="getPosterUrl(channel)" [src]="getPosterUrl(channel) | https" alt="{{ channel.nombre }}" class="poster-image channel-logo">
+        <div class="poster-placeholder channel-placeholder" *ngIf="!getPosterUrl(channel)">
           <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                   d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/>

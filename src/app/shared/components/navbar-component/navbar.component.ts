@@ -2,6 +2,7 @@ import { Component, inject, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterLink, RouterLinkActive } from '@angular/router';
 import { AuthService } from '../../../services/auth.service';
+import { CacheService } from '../../../services/cache.service';
 
 @Component({
   selector: 'app-navbar',
@@ -12,6 +13,7 @@ import { AuthService } from '../../../services/auth.service';
 })
 export class NavbarComponent implements OnInit {
   private authService = inject(AuthService);
+  private cacheService = inject(CacheService);
 
   isLoading = false;
   username: string | null = null;
@@ -47,6 +49,9 @@ export class NavbarComponent implements OnInit {
     try {
       this.isLoading = true;
       console.log('🚪 Cerrando sesión...');
+
+      // Limpiar caché al cerrar sesión
+      this.cacheService.clear();
 
       await this.authService.logout();
 

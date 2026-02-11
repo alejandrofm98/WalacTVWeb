@@ -1,4 +1,4 @@
-import {Component, OnInit, inject, ElementRef, ViewChild, AfterViewInit} from '@angular/core';
+import {Component, OnInit, inject, ElementRef, ViewChild, AfterViewInit, HostListener} from '@angular/core';
 import {CommonModule} from '@angular/common';
 import {Router} from '@angular/router';
 import {FormsModule} from '@angular/forms';
@@ -22,6 +22,8 @@ type TabType = 'channels' | 'movies' | 'series';
 })
 export class EventsListComponent implements OnInit, AfterViewInit {
   @ViewChild('loadMoreTrigger') loadMoreTrigger!: ElementRef;
+  @ViewChild('countrySearchInput') countrySearchInput!: ElementRef;
+  @ViewChild('groupSearchInput') groupSearchInput!: ElementRef;
 
   channels: IptvChannel[] = [];
   movies: IptvMovie[] = [];
@@ -37,7 +39,7 @@ export class EventsListComponent implements OnInit, AfterViewInit {
   channelsPage = 1;
   moviesPage = 1;
   seriesPage = 1;
-  limit = 80;
+  limit = 40; // Reducido de 80 a 40 para carga más rápida
 
   hasMoreChannels = true;
   hasMoreMovies = true;
@@ -46,10 +48,16 @@ export class EventsListComponent implements OnInit, AfterViewInit {
   selectedGroup = '';
   selectedCountry = '';
   groups: string[] = [];
-  countries: string[] = [];
+  countries: {code: string, name: string}[] = [];
 
   searchQuery = '';
   private searchSubject = new Subject<string>();
+
+  // Searchable select properties
+  isCountryOpen = false;
+  isGroupOpen = false;
+  countrySearch = '';
+  groupSearch = '';
 
   private dataService = inject(DataService);
   private router = inject(Router);
@@ -58,6 +66,7 @@ export class EventsListComponent implements OnInit, AfterViewInit {
 
   ngOnInit() {
     this.loadContentStats();
+    this.loadFilters();
     this.loadContent();
 
     this.searchSubject.pipe(
@@ -125,16 +134,19 @@ export class EventsListComponent implements OnInit, AfterViewInit {
     this.channels = [];
     this.movies = [];
     this.series = [];
+    this.selectedGroup = ''; // Limpiar filtro de grupo al cambiar de pestaña
+    this.isCountryOpen = false;
+    this.isGroupOpen = false;
+    this.countrySearch = '';
+    this.groupSearch = '';
     this.loadFilters();
     this.loadContent();
   }
 
   loadFilters() {
-    this.dataService.getGroups(this.activeTab).subscribe({
-      next: (groups) => this.groups = groups
-    });
+    this.loadGroups();
     this.dataService.getCountries(this.activeTab).subscribe({
-      next: (countries) => this.countries = countries.map(c => c.name)
+      next: (countries) => this.countries = countries.map(c => ({code: c.code, name: c.name}))
     });
   }
 
@@ -145,12 +157,32 @@ export class EventsListComponent implements OnInit, AfterViewInit {
     this.loadContent();
   }
 
-  clearFilters() {
+  onCountryChange() {
     this.selectedGroup = '';
-    this.selectedCountry = '';
     this.channelsPage = 1;
     this.moviesPage = 1;
     this.seriesPage = 1;
+    this.loadGroups();
+    this.loadContent();
+  }
+
+  private loadGroups(): void {
+    this.dataService.getGroups(this.activeTab, this.selectedCountry || undefined).subscribe({
+      next: (groups) => this.groups = groups
+    });
+  }
+
+  clearFilters() {
+    this.selectedGroup = '';
+    this.selectedCountry = '';
+    this.countrySearch = '';
+    this.groupSearch = '';
+    this.isCountryOpen = false;
+    this.isGroupOpen = false;
+    this.channelsPage = 1;
+    this.moviesPage = 1;
+    this.seriesPage = 1;
+    this.loadGroups();
     this.loadContent();
   }
 
@@ -300,6 +332,90 @@ export class EventsListComponent implements OnInit, AfterViewInit {
       case 'movies': return this.movies.length;
       case 'series': return this.series.length;
       default: return 0;
+    }
+  }
+
+  // Searchable select getters
+  get filteredCountries(): {code: string, name: string}[] {
+    if (!this.countrySearch) return this.countries;
+    const search = this.countrySearch.toLowerCase();
+    return this.countries.filter(c => c.name.toLowerCase().includes(search));
+  }
+
+  get filteredGroups(): string[] {
+    if (!this.groupSearch) return this.groups;
+    const search = this.groupSearch.toLowerCase();
+    return this.groups.filter(g => g.toLowerCase().includes(search));
+  }
+
+  getCountryName(code: string): string {
+    const country = this.countries.find(c => c.code === code);
+    return country?.name || code;
+  }
+
+  // Searchable select methods
+  toggleCountry(): void {
+    this.isCountryOpen = !this.isCountryOpen;
+    if (this.isCountryOpen) {
+      this.isGroupOpen = false;
+      this.countrySearch = '';
+      setTimeout(() => {
+        this.countrySearchInput?.nativeElement?.focus();
+      }, 50);
+    }
+  }
+
+  toggleGroup(): void {
+    this.isGroupOpen = !this.isGroupOpen;
+    if (this.isGroupOpen) {
+      this.isCountryOpen = false;
+      this.groupSearch = '';
+      setTimeout(() => {
+        this.groupSearchInput?.nativeElement?.focus();
+      }, 50);
+    }
+  }
+
+  onCountryKeydown(event: KeyboardEvent): void {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      const firstCountry = this.filteredCountries[0];
+      if (firstCountry) {
+        this.selectCountry(firstCountry.code);
+      }
+    }
+  }
+
+  onGroupKeydown(event: KeyboardEvent): void {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      const firstGroup = this.filteredGroups[0];
+      if (firstGroup) {
+        this.selectGroup(firstGroup);
+      }
+    }
+  }
+
+  selectCountry(code: string): void {
+    this.selectedCountry = code;
+    this.isCountryOpen = false;
+    this.countrySearch = '';
+    this.onCountryChange();
+  }
+
+  selectGroup(group: string): void {
+    this.selectedGroup = group;
+    this.isGroupOpen = false;
+    this.groupSearch = '';
+    this.onFilterChange();
+  }
+
+  @HostListener('document:click', ['$event'])
+  onDocumentClick(event: MouseEvent): void {
+    const target = event.target as HTMLElement;
+    if (!target.closest('.searchable-select')) {
+      this.isCountryOpen = false;
+      this.isGroupOpen = false;
     }
   }
 }
