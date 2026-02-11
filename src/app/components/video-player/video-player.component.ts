@@ -86,6 +86,10 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
   private totalItems = 0;
   private isLoadingMore = false;
 
+  private retryCount = 0;
+  private readonly MAX_RETRIES = 5;
+  private retryTimeout?: number;
+
   constructor(private route: ActivatedRoute) {
     this.volume = this.playerState.getVolume();
     this.isMuted = this.playerState.isMuted();
@@ -658,6 +662,9 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
     if (this.hideChannelOverlayTimeout) {
       clearTimeout(this.hideChannelOverlayTimeout);
     }
+    if (this.retryTimeout) {
+      clearTimeout(this.retryTimeout);
+    }
     this.unlockOrientation();
     this.showNavbar();
 
@@ -712,7 +719,7 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
     if (isChannel && !isHLS && !isMP4 && !isMKV && libs.mpegts && libs.mpegts.isSupported()) {
       console.log('Usando MPEG-TS player para canal');
       this.initMpegtsPlayer(video, this.streamUrl, autoplay, savedMuted, savedVolume);
-    } 
+    }
     // Películas y series usan HLS siempre
     else if (!isChannel && libs.Hls && libs.Hls.isSupported()) {
       console.log('Usando HLS player para pelicula/serie');
@@ -722,7 +729,7 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
     else if (isHLS && libs.Hls && libs.Hls.isSupported()) {
       console.log('Usando HLS player');
       this.initHlsPlayer(video, this.streamUrl, autoplay, savedMuted, savedVolume);
-    } 
+    }
     // Video nativo para MP4/MKV
     else if ((isMP4 || isMKV) && (video.canPlayType('video/mp4') || video.canPlayType('video/webm'))) {
       console.log('Usando HTML5 video nativo');
@@ -731,7 +738,7 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
       video.volume = savedVolume;
       video.load();
       this.playVideo(video, autoplay, savedMuted, savedVolume);
-    } 
+    }
     // HLS nativo del navegador
     else if (video.canPlayType('application/vnd.apple.mpegurl')) {
       console.log('Usando HLS nativo');
@@ -740,7 +747,7 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
       video.volume = savedVolume;
       video.load();
       this.playVideo(video, autoplay, savedMuted, savedVolume);
-    } 
+    }
     // Fallback final
     else {
       console.log('Usando HTML5 fallback');
@@ -760,30 +767,89 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
     this.hlsPlayer = new Hls({
       enableWorker: true,
       lowLatencyMode: true,
-      backBufferLength: 90
+      backBufferLength: 90,
+      xhrSetup: (xhr: XMLHttpRequest, url: string) => {
+        // Añadir timestamp para evitar caché en reintentos
+        if (this.retryCount > 0) {
+          console.log(`Reintento ${this.retryCount} con timestamp para evitar caché`);
+        }
+      }
     });
 
     this.hlsPlayer.loadSource(url);
     this.hlsPlayer.attachMedia(video);
 
     this.hlsPlayer.on(Hls.Events.MANIFEST_PARSED, () => {
+      console.log('HLS Manifest parsed successfully');
       video.volume = volume;
       video.muted = wasMuted;
       this.playVideo(video, autoplay, wasMuted, volume);
+      // Resetear contador si carga correctamente
+      if (this.retryCount > 0) {
+        console.log('✅ Stream HLS cargado correctamente, reseteando contador');
+        this.retryCount = 0;
+      }
     });
 
     this.hlsPlayer.on(Hls.Events.ERROR, (event: any, data: any) => {
-      if (data.fatal) {
+      console.error('HLS Error completo:', {
+        event,
+        data,
+        retryCount: this.retryCount,
+        type: data?.type,
+        details: data?.details,
+        fatal: data?.fatal,
+        response: data?.response,
+        networkDetails: data?.networkDetails
+      });
+
+      // Detectar error 511 o errores de red que puedan ser 511
+      const isAuthError = data?.response?.code === 511 ||
+                          data?.networkDetails?.status === 511 ||
+                          data?.response?.statusCode === 511 ||
+                          (data?.type === 'networkError' && data?.response?.code >= 500);
+
+      if (isAuthError && this.retryCount < this.MAX_RETRIES) {
+        this.retryCount++;
+        console.warn(`⚠️ Error ${data?.response?.code || 511} detectado en HLS. Reintento ${this.retryCount}/${this.MAX_RETRIES}`);
+
+        // Destruir player actual
+        if (this.hlsPlayer) {
+          this.hlsPlayer.destroy();
+          this.hlsPlayer = null;
+        }
+
+        // Limpiar timeout anterior si existe
+        if (this.retryTimeout) {
+          clearTimeout(this.retryTimeout);
+        }
+
+        // Reintentar después de 2 segundos
+        this.retryTimeout = window.setTimeout(() => {
+          console.log('🔄 Reintentando carga del stream HLS...');
+          this.reloadStream();
+        }, 2000);
+      } else if (data.fatal) {
+        console.error('Error fatal en HLS:', data.type);
         switch (data.type) {
           case Hls.ErrorTypes.NETWORK_ERROR:
-            this.hlsPlayer?.startLoad();
+            console.log('Intentando recuperar de error de red...');
+            if (this.hlsPlayer && this.retryCount < this.MAX_RETRIES) {
+              this.retryCount++;
+              setTimeout(() => {
+                this.hlsPlayer?.startLoad();
+              }, 1000);
+            }
             break;
           case Hls.ErrorTypes.MEDIA_ERROR:
+            console.log('Intentando recuperar de error de media...');
             this.hlsPlayer?.recoverMediaError();
             break;
           default:
-            this.hlsPlayer?.destroy();
-            this.hlsPlayer = null;
+            if (this.hlsPlayer) {
+              this.hlsPlayer.destroy();
+              this.hlsPlayer = null;
+            }
             break;
         }
       }
@@ -805,6 +871,52 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
     });
 
     this.player.on(mpegts.Events.ERROR, (type: any, detail: any) => {
+      console.error('MPEG-TS Error completo:', {
+        type,
+        detail,
+        retryCount: this.retryCount,
+        code: detail?.code,
+        msg: detail?.msg
+      });
+
+      // Detectar error 511 u otros errores HTTP
+    const isAuthError = type === 'NetworkError' ||
+                    type === 'HttpStatusCodeInvalid' ||
+                    detail === 'HttpStatusCodeInvalid' ||
+                    String(detail).includes('HttpStatusCodeInvalid') ||
+                    String(type).includes('NetworkError');
+
+      if (isAuthError && this.retryCount < this.MAX_RETRIES) {
+        this.retryCount++;
+        console.warn(`⚠️ Error ${detail?.code || 511} detectado en MPEG-TS. Reintento ${this.retryCount}/${this.MAX_RETRIES}`);
+
+        // Destruir player actual
+        if (this.player) {
+          this.player.destroy();
+          this.player = null;
+        }
+
+        // Limpiar timeout anterior si existe
+        if (this.retryTimeout) {
+          clearTimeout(this.retryTimeout);
+        }
+
+        // Reintentar después de 2 segundos
+        this.retryTimeout = window.setTimeout(() => {
+          console.log('🔄 Reintentando carga del stream MPEG-TS...');
+          this.reloadStream();
+        }, 2000);
+      } else if (this.retryCount >= this.MAX_RETRIES) {
+        console.error('❌ Máximo número de reintentos alcanzado');
+      }
+    });
+
+    this.player.on(mpegts.Events.LOADING_COMPLETE, () => {
+      console.log('MPEG-TS loading complete');
+      if (this.retryCount > 0) {
+        console.log('✅ Stream MPEG-TS cargado correctamente, reseteando contador');
+        this.retryCount = 0;
+      }
     });
 
     this.player.attachMediaElement(video);
@@ -846,35 +958,129 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
     });
 
     video.addEventListener('waiting', () => {
+      console.log('Video en espera...');
     });
 
     video.addEventListener('canplay', () => {
+      // Resetear contador de reintentos cuando el video carga correctamente
+      if (this.retryCount > 0) {
+        console.log('✅ Video canplay, reseteando contador de reintentos');
+        this.retryCount = 0;
+      }
+    });
+
+    video.addEventListener('loadeddata', () => {
+      // También resetear en loadeddata
+      if (this.retryCount > 0) {
+        console.log('✅ Video loadeddata, reseteando contador de reintentos');
+        this.retryCount = 0;
+      }
     });
 
     video.addEventListener('error', (e) => {
-      const mpegtsLib = (window as any).mpegts;
+      const errorCode = (video.error as MediaError | null)?.code;
+      const errorMessage = video.error?.message;
+      const networkState = video.networkState;
 
-      if (!this.player && mpegtsLib?.isSupported()) {
-        try {
-          this.player = mpegtsLib.createPlayer({
-            type: 'mpegts',
-            isLive: true,
-            url: this.streamUrl,
-            enableWorker: true,
-            liveBufferLatencyChasing: true,
-            lazyLoad: false,
-            enableStashBuffer: false,
-            stashInitialSize: 128
-          });
-          this.player.on(mpegtsLib.Events.ERROR, (type: any, detail: any) => {
-          });
-          this.player.attachMediaElement(video);
-          this.player.load();
-        } catch (err) {
-          console.error('Error iniciando mpegts.js:', err);
+      console.error('Error en video element:', {
+        code: errorCode,
+        message: errorMessage,
+        networkState: networkState,
+        retryCount: this.retryCount,
+        MEDIA_ERR_ABORTED: MediaError.MEDIA_ERR_ABORTED,
+        MEDIA_ERR_NETWORK: MediaError.MEDIA_ERR_NETWORK,
+        MEDIA_ERR_DECODE: MediaError.MEDIA_ERR_DECODE,
+        MEDIA_ERR_SRC_NOT_SUPPORTED: MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED
+      });
+
+      // Detectar error 511 o errores de red
+      const isAuthError = errorCode === MediaError.MEDIA_ERR_NETWORK ||
+                          networkState === HTMLMediaElement.NETWORK_NO_SOURCE ||
+                          errorMessage?.includes('511');
+
+      if (isAuthError && this.retryCount < this.MAX_RETRIES) {
+        this.retryCount++;
+        console.warn(`⚠️ Error de red detectado en video element. Reintento ${this.retryCount}/${this.MAX_RETRIES}`);
+
+        // Limpiar timeout anterior si existe
+        if (this.retryTimeout) {
+          clearTimeout(this.retryTimeout);
         }
+
+        // Reintentar después de 2 segundos
+        this.retryTimeout = window.setTimeout(() => {
+          console.log('🔄 Reintentando carga del stream desde video error...');
+          this.reloadStream();
+        }, 2000);
+      } else if (this.retryCount >= this.MAX_RETRIES) {
+        console.error('❌ Máximo número de reintentos alcanzado');
       }
     });
+  }
+
+  private reloadStream(): void {
+    console.log('🔄 Iniciando recarga de stream...');
+
+    if (!this.currentItem) {
+      console.error('❌ No hay item actual para recargar');
+      return;
+    }
+
+    const username = localStorage.getItem('iptv_username') || '';
+    const password = localStorage.getItem('iptv_password') || '';
+
+    if (!username || !password) {
+      console.error('❌ No hay credenciales para recargar');
+      return;
+    }
+
+    const item = this.currentItem as any;
+    const originalUrl = item.url || item.stream_url || '';
+
+    if (!originalUrl) {
+      console.error('❌ No hay URL para recargar');
+      return;
+    }
+
+    // Destruir players existentes
+    if (this.player) {
+      console.log('Destruyendo player MPEG-TS existente');
+      try {
+        this.player.destroy();
+      } catch (e) {
+        console.warn('Error al destruir player MPEG-TS:', e);
+      }
+      this.player = null;
+    }
+
+    if (this.hlsPlayer) {
+      console.log('Destruyendo player HLS existente');
+      try {
+        this.hlsPlayer.destroy();
+      } catch (e) {
+        console.warn('Error al destruir player HLS:', e);
+      }
+      this.hlsPlayer = null;
+    }
+
+    // Limpiar el video element
+    const video = this.videoElement?.nativeElement;
+    if (video) {
+      video.pause();
+      video.removeAttribute('src');
+      video.load();
+    }
+
+    // Reconstruir URL del stream
+    this.streamUrl = this.buildStreamUrl(originalUrl, username, password);
+
+    console.log(`✨ URL reconstruida (intento ${this.retryCount}):`, this.streamUrl);
+
+    // Pequeña pausa antes de reinicializar
+    setTimeout(() => {
+      console.log('🎬 Reinicializando player...');
+      this.initializePlayer(true);
+    }, 500);
   }
 
   togglePlayPause() {
