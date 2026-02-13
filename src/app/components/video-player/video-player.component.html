@@ -2,7 +2,7 @@
 
 <div class="player-wrapper">
   <div class="header-info">
-    <div class="channel-number-badge" *ngIf="currentItem?.num">
+    <div class="channel-number-badge" *ngIf="currentItem?.num && !isMovieContent">
       {{ currentItem?.num }}
     </div>
     <h1 class="event-title">{{ eventTitle }}</h1>
@@ -25,16 +25,16 @@
       data-setup="{}">
     </video>
 
-    <div class="channel-overlay" [class.visible]="showChannelOverlay && isFullscreen">
+    <div class="channel-overlay" [class.visible]="showChannelOverlay && isFullscreen && !isMovieContent">
       <div class="channel-overlay-content">
-        <div class="channel-overlay-number" *ngIf="currentItem?.num">{{ currentItem?.num }}</div>
+        <div class="channel-overlay-number" *ngIf="currentItem?.num && !isMovieContent">{{ currentItem?.num }}</div>
         <div class="channel-overlay-icon">📺</div>
         <div class="channel-overlay-name">{{ currentItem?.nombre }}</div>
         <div class="channel-overlay-group">{{ currentItem?.grupo }}</div>
       </div>
     </div>
 
-    <div class="swipe-indicator" *ngIf="isChannelMode && isFullscreen"
+    <div class="swipe-indicator" *ngIf="isChannelMode && isFullscreen && !isMovieContent"
          [class.show-controls]="showControls">
       <div class="swipe-hint swipe-hint-left">
         <span class="swipe-arrow">◀</span>

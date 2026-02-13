@@ -185,14 +185,14 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   onTouchStart(event: TouchEvent): void {
-    if (!this.isChannelMode || this.allItems.length < 2) return;
+    if (!this.isChannelMode || this.allItems.length < 2 || this.isMovieContent) return;
 
     this.touchStartX = event.changedTouches[0].screenX;
     this.touchStartY = event.changedTouches[0].screenY;
   }
 
   async onTouchEnd(event: TouchEvent): Promise<void> {
-    if (!this.isChannelMode || this.allItems.length < 2) return;
+    if (!this.isChannelMode || this.allItems.length < 2 || this.isMovieContent) return;
 
     this.touchEndX = event.changedTouches[0].screenX;
     this.touchEndY = event.changedTouches[0].screenY;
@@ -403,7 +403,7 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   async nextItem(): Promise<void> {
-    if (this.allItems.length === 0 || !this.currentItem) return;
+    if (this.allItems.length === 0 || !this.currentItem || this.isMovieContent) return;
 
     const currentNum = this.currentItem.num || 0;
     const targetNum = currentNum + 1;
@@ -438,7 +438,7 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   async previousItem(): Promise<void> {
-    if (this.allItems.length === 0 || !this.currentItem) return;
+    if (this.allItems.length === 0 || !this.currentItem || this.isMovieContent) return;
 
     const currentNum = this.currentItem.num || 0;
     const targetNum = currentNum - 1;
@@ -575,11 +575,15 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   get hasPreviousItem(): boolean {
-    return this.isChannelMode && this.allItems.length > 1;
+    return this.isChannelMode && this.allItems.length > 1 && !this.isMovieContent;
   }
 
   get hasNextItem(): boolean {
-    return this.isChannelMode && this.allItems.length > 1;
+    return this.isChannelMode && this.allItems.length > 1 && !this.isMovieContent;
+  }
+
+  get isMovieContent(): boolean {
+    return this.contentType === 'movies';
   }
 
   // === VOD Content Check ===
