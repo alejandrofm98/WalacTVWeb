@@ -44,6 +44,7 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
 
   private player: any;
   private hlsPlayer: any;
+  private videoJsPlayer: any;
   private shouldInitializePlayer = false;
   private dataService = inject(DataService);
   private playerState = inject(PlayerStateService);
@@ -844,6 +845,10 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
       this.hlsPlayer.destroy();
       this.hlsPlayer = null;
     }
+    if (this.videoJsPlayer) {
+      this.videoJsPlayer.dispose();
+      this.videoJsPlayer = null;
+    }
     if (this.hideControlsTimeout) {
       clearTimeout(this.hideControlsTimeout);
     }
@@ -898,6 +903,7 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
     console.log('Inicializando player con URL:', this.streamUrl);
     console.log('Tipo de contenido:', this.contentType);
 
+    // Limpiar players existentes
     if (this.player) {
       this.player.destroy();
       this.player = null;
@@ -905,6 +911,10 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
     if (this.hlsPlayer) {
       this.hlsPlayer.destroy();
       this.hlsPlayer = null;
+    }
+    if (this.videoJsPlayer) {
+      this.videoJsPlayer.dispose();
+      this.videoJsPlayer = null;
     }
 
     const savedVolume = this.playerState.getVolume();
@@ -921,22 +931,28 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
     const checkLibs = () => {
       const Hls = (window as any).Hls;
       const mpegtsLib = (window as any).mpegts;
-      return { Hls, mpegts: mpegtsLib };
+      const videojsLib = (window as any).videojs;
+      return { Hls, mpegts: mpegtsLib, videojs: videojsLib };
     };
 
     const libs = checkLibs();
 
-    // 1. Canales sin extension explicita -> MPEG-TS (transport stream)
-    if (isChannel && !isHLS && !isMP4 && !isMKV && libs.mpegts && libs.mpegts.isSupported()) {
+    // 1. MKV files -> Video.js with improved error handling and audio codec detection
+    if (isMKV && libs.videojs) {
+      console.log('Usando Video.js para archivo MKV');
+      this.initVideoJsPlayer(video, this.streamUrl, autoplay, savedMuted, savedVolume);
+    }
+    // 2. Canales sin extension explicita -> MPEG-TS (transport stream)
+    else if (isChannel && !isHLS && !isMP4 && !isMKV && libs.mpegts && libs.mpegts.isSupported()) {
       console.log('Usando MPEG-TS player para canal');
       this.initMpegtsPlayer(video, this.streamUrl, autoplay, savedMuted, savedVolume);
     }
-    // 2. URLs con .m3u8 (HLS) -> HLS.js
+    // 3. URLs con .m3u8 (HLS) -> HLS.js
     else if (isHLS && libs.Hls && libs.Hls.isSupported()) {
       console.log('Usando HLS player para stream .m3u8');
       this.initHlsPlayer(video, this.streamUrl, autoplay, savedMuted, savedVolume);
     }
-    // 3. URLs con .m3u8 (HLS) -> HLS nativo del navegador (Safari)
+    // 4. URLs con .m3u8 (HLS) -> HLS nativo del navegador (Safari)
     else if (isHLS && video.canPlayType('application/vnd.apple.mpegurl')) {
       console.log('Usando HLS nativo del navegador');
       video.src = this.streamUrl;
@@ -945,10 +961,8 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
       video.load();
       this.playVideo(video, autoplay, savedMuted, savedVolume);
     }
-    // 4. MP4/MKV o peliculas/series sin extension HLS -> HTML5 video nativo
-    //    Esto es lo correcto: el navegador descarga progresivamente y reproduce
-    //    sin cargar todo en memoria como hacia HLS.js con archivos no-HLS.
-    else if (isMP4 || isMKV || !isChannel) {
+    // 5. MP4 o peliculas/series sin extension HLS -> HTML5 video nativo
+    else if (isMP4 || !isChannel) {
       console.log('Usando HTML5 video nativo para', this.contentType);
       video.src = this.streamUrl;
       video.muted = savedMuted;
@@ -956,7 +970,7 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
       video.load();
       this.playVideo(video, autoplay, savedMuted, savedVolume);
     }
-    // 5. Fallback final
+    // 6. Fallback final
     else {
       console.log('Usando HTML5 fallback');
       video.src = this.streamUrl;
@@ -973,19 +987,22 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
     const Hls = (window as any).Hls;
     const isLiveContent = this.contentType === 'channels';
 
+    // Enhanced HLS config with better error handling and reduced retry attempts
     const hlsConfig: Record<string, unknown> = {
       enableWorker: true,
-      // lowLatencyMode solo para contenido en vivo, no para VOD (peliculas/series)
       lowLatencyMode: isLiveContent,
       backBufferLength: isLiveContent ? 90 : 30,
-      // Para VOD: permitir buffering mas agresivo para evitar stuttering
       maxBufferLength: isLiveContent ? 30 : 60,
       maxMaxBufferLength: isLiveContent ? 60 : 120,
-      xhrSetup: (xhr: XMLHttpRequest, _url: string) => {
-        if (this.retryCount > 0) {
-          console.log(`Reintento ${this.retryCount} con timestamp para evitar caché`);
-        }
-      }
+      // Limit fragment loading retries to prevent 404 spam
+      manifestLoadingMaxRetry: 2,
+      levelLoadingMaxRetry: 2,
+      fragLoadingMaxRetry: 2,
+      manifestLoadingRetryDelay: 1000,
+      levelLoadingRetryDelay: 1000,
+      fragLoadingRetryDelay: 1000,
+      // Abort loading on fatal errors faster
+      fragLoadingMaxRetryTimeout: 5000
     };
 
     this.hlsPlayer = new Hls(hlsConfig);
@@ -1017,15 +1034,24 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
         networkDetails: data?.networkDetails
       });
 
-      // Detectar error 511 o errores de red que puedan ser 511
-      const isAuthError = data?.response?.code === 511 ||
-                          data?.networkDetails?.status === 511 ||
-                          data?.response?.statusCode === 511 ||
-                          (data?.type === 'networkError' && data?.response?.code >= 500);
+      // Detectar error 404, 511 u otros errores HTTP
+      const statusCode = data?.response?.code || data?.networkDetails?.status || data?.response?.statusCode;
+      const isHttpError = statusCode >= 400;
+      const isAuthError = statusCode === 511 || (data?.type === 'networkError' && statusCode >= 500);
+
+      // Stop retrying on 404 errors - file doesn't exist
+      if (statusCode === 404) {
+        console.error('❌ Error 404: Archivo no encontrado. Deteniendo reintentos.');
+        if (this.hlsPlayer) {
+          this.hlsPlayer.stopLoad();
+        }
+        return;
+      }
 
       if (isAuthError && this.retryCount < this.MAX_RETRIES) {
         this.retryCount++;
-        console.warn(`⚠️ Error ${data?.response?.code || 511} detectado en HLS. Reintento ${this.retryCount}/${this.MAX_RETRIES}`);
+        const delay = 2000 * Math.pow(2, this.retryCount - 1); // Exponential backoff
+        console.warn(`⚠️ Error ${statusCode} detectado en HLS. Reintento ${this.retryCount}/${this.MAX_RETRIES} en ${delay}ms`);
 
         // Destruir player actual
         if (this.hlsPlayer) {
@@ -1038,21 +1064,22 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
           clearTimeout(this.retryTimeout);
         }
 
-        // Reintentar después de 2 segundos
+        // Reintentar con backoff exponencial
         this.retryTimeout = window.setTimeout(() => {
           console.log('🔄 Reintentando carga del stream HLS...');
           this.reloadStream();
-        }, 2000);
-      } else if (data.fatal) {
+        }, delay);
+      } else if (data.fatal && statusCode !== 404) {
         console.error('Error fatal en HLS:', data.type);
         switch (data.type) {
           case Hls.ErrorTypes.NETWORK_ERROR:
             console.log('Intentando recuperar de error de red...');
             if (this.hlsPlayer && this.retryCount < this.MAX_RETRIES) {
               this.retryCount++;
+              const delay = 1000 * Math.pow(2, this.retryCount - 1);
               setTimeout(() => {
                 this.hlsPlayer?.startLoad();
-              }, 1000);
+              }, delay);
             }
             break;
           case Hls.ErrorTypes.MEDIA_ERROR:
@@ -1068,6 +1095,113 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
         }
       }
     });
+  }
+
+  private initVideoJsPlayer(video: HTMLVideoElement, url: string, autoplay: boolean, wasMuted: boolean, volume: number): void {
+    const videojs = (window as any).videojs;
+
+    // Add CSS class for Video.js
+    video.classList.add('video-js', 'vjs-default-skin', 'vjs-big-play-centered');
+
+    this.videoJsPlayer = videojs(video, {
+      html5: {
+        vhs: {
+          limitRenditionByPlayerDimensions: true,
+          useDevicePixelRatio: true,
+          overrideNative: true,
+          allowSeeksWithinUnsafeLiveWindow: true,
+          handlePartialData: true
+        },
+        nativeAudioTracks: false,
+        nativeVideoTracks: false
+      },
+      preload: 'auto',
+      controls: false,
+      autoplay: autoplay,
+      muted: wasMuted,
+      volume: volume,
+      fluid: true,
+      errorDisplay: false
+    });
+
+    // Configure retry logic with exponential backoff
+    let retryAttempts = 0;
+    const maxRetryAttempts = 3;
+    const baseDelay = 2000;
+
+    const attemptLoad = (attemptUrl: string): void => {
+      this.videoJsPlayer.src({
+        src: attemptUrl,
+        type: 'video/mp4' // MKV may use MP4 mime type for compatibility
+      });
+      this.videoJsPlayer.load();
+    };
+
+    // Handle errors with improved logic
+    this.videoJsPlayer.on('error', () => {
+      const error = this.videoJsPlayer.error();
+      console.error('Video.js error:', {
+        code: error?.code,
+        message: error?.message,
+        retryAttempts: retryAttempts,
+        url: url
+      });
+
+      // Check if it's a network error (code 2) or media error (code 3)
+      if ((error?.code === 2 || error?.code === 3) && retryAttempts < maxRetryAttempts) {
+        retryAttempts++;
+        const delay = baseDelay * Math.pow(2, retryAttempts - 1);
+        console.warn(`⚠️ Error ${error.code} en Video.js. Reintento ${retryAttempts}/${maxRetryAttempts} en ${delay}ms`);
+
+        setTimeout(() => {
+          attemptLoad(url);
+        }, delay);
+      } else if (retryAttempts >= maxRetryAttempts) {
+        console.error('❌ Máximo número de reintentos alcanzado en Video.js');
+      }
+    });
+
+    // Monitor audio track availability
+    this.videoJsPlayer.on('loadedmetadata', () => {
+      const audioTracks = this.videoJsPlayer.audioTracks?.();
+      const hasAudio = audioTracks && audioTracks.length > 0;
+
+      console.log('Video.js metadata loaded:', {
+        duration: this.videoJsPlayer.duration(),
+        audioTracks: audioTracks?.length || 0,
+        videoWidth: this.videoJsPlayer.videoWidth(),
+        videoHeight: this.videoJsPlayer.videoHeight()
+      });
+
+      // Reset retry counter on success
+      if (retryAttempts > 0) {
+        console.log('✅ Video cargado correctamente con Video.js, reseteando contador');
+        retryAttempts = 0;
+      }
+
+      // Check for audio codec issues
+      if (!hasAudio && this.videoJsPlayer.duration() > 0) {
+        console.warn('⚠️ Posible problema de códec de audio. El video no tiene pistas de audio detectadas.');
+      }
+    });
+
+    // Handle canplay event
+    this.videoJsPlayer.on('canplay', () => {
+      if (retryAttempts > 0) {
+        console.log('✅ Video.js canplay event, reseteando contador de reintentos');
+        retryAttempts = 0;
+      }
+    });
+
+    // Start loading
+    attemptLoad(url);
+
+    // Play if autoplay is enabled
+    if (autoplay) {
+      this.videoJsPlayer.play().catch((err: any) => {
+        console.log('Video.js autoplay blocked:', err);
+      });
+    }
   }
 
   private initMpegtsPlayer(video: HTMLVideoElement, url: string, autoplay: boolean, wasMuted: boolean, volume: number): void {
@@ -1331,6 +1465,16 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
       this.hlsPlayer = null;
     }
 
+    if (this.videoJsPlayer) {
+      console.log('Destruyendo player Video.js existente');
+      try {
+        this.videoJsPlayer.dispose();
+      } catch (e) {
+        console.warn('Error al destruir player Video.js:', e);
+      }
+      this.videoJsPlayer = null;
+    }
+
     // Limpiar el video element
     const video = this.videoElement?.nativeElement;
     if (video) {
@@ -1352,14 +1496,26 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   togglePlayPause() {
-    const video = this.videoElement.nativeElement;
-    video.paused ? video.play().catch(console.error) : video.pause();
+    if (this.videoJsPlayer) {
+      if (this.videoJsPlayer.paused()) {
+        this.videoJsPlayer.play().catch((err: any) => console.error('Error al reproducir Video.js:', err));
+      } else {
+        this.videoJsPlayer.pause();
+      }
+    } else {
+      const video = this.videoElement.nativeElement;
+      video.paused ? video.play().catch(console.error) : video.pause();
+    }
   }
 
   toggleMute() {
     this.isMuted = !this.isMuted;
     this.playerState.setMuted(this.isMuted);
-    this.videoElement.nativeElement.muted = this.isMuted;
+    if (this.videoJsPlayer) {
+      this.videoJsPlayer.muted(this.isMuted);
+    } else {
+      this.videoElement.nativeElement.muted = this.isMuted;
+    }
   }
 
   setVolume(event: any): void {
@@ -1370,7 +1526,12 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
     const percentage = (newVolume * 100);
     event.target.style.setProperty('--value', percentage + '%');
 
-    if (this.videoElement?.nativeElement) {
+    if (this.videoJsPlayer) {
+      this.videoJsPlayer.volume(newVolume);
+      this.videoJsPlayer.muted(newVolume === 0);
+      this.isMuted = newVolume === 0;
+      this.playerState.setMuted(this.isMuted);
+    } else if (this.videoElement?.nativeElement) {
       this.videoElement.nativeElement.volume = newVolume;
       this.isMuted = newVolume === 0;
       this.playerState.setMuted(this.isMuted);
