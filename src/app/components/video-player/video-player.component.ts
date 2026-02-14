@@ -733,7 +733,7 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
     }
 
     const item = this.currentItem as any;
-    const originalUrl = item.url || item.stream_url || '';
+    const originalUrl = item.stream_url || item.url || '';
 
     if (!originalUrl) {
       console.error('No hay URL original para el item:', this.currentItem);
@@ -765,6 +765,12 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
   private buildStreamUrl(originalUrl: string, username: string, password: string): string {
     if (!originalUrl) return '';
 
+    // If URL is already a proxied URL (starts with our domain), return it as-is
+    const baseUrl = 'https://iptv.walerike.com';
+    if (originalUrl.startsWith(baseUrl)) {
+      return originalUrl;
+    }
+
     const parts = originalUrl.split('/');
     const lastPart = parts[parts.length - 1];
 
@@ -773,15 +779,15 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
     const extension = extMatch ? extMatch[0] : '';
     const streamId = lastPart.replace(/\.(ts|m3u8|mp4|mkv|avi)$/i, '');
 
-    let baseUrl = 'https://iptv.walerike.com';
+    let proxyBaseUrl = baseUrl;
 
     // Add path based on content type
     switch (this.contentType) {
       case 'movies':
-        baseUrl += '/movie';
+        proxyBaseUrl += '/movie';
         break;
       case 'series':
-        baseUrl += '/series';
+        proxyBaseUrl += '/series';
         break;
       case 'channels':
       default:
@@ -793,10 +799,10 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
     // returns the correct format. Without it, the server may return raw
     // binary that HLS.js can't parse, crashing the browser.
     if (this.contentType !== 'channels' && extension) {
-      return `${baseUrl}/${username}/${password}/${streamId}${extension}`;
+      return `${proxyBaseUrl}/${username}/${password}/${streamId}${extension}`;
     }
 
-    return `${baseUrl}/${username}/${password}/${streamId}`;
+    return `${proxyBaseUrl}/${username}/${password}/${streamId}`;
   }
 
   ngAfterViewInit() {
@@ -1297,7 +1303,7 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
     }
 
     const item = this.currentItem as any;
-    const originalUrl = item.url || item.stream_url || '';
+    const originalUrl = item.stream_url || item.url || '';
 
     if (!originalUrl) {
       console.error('❌ No hay URL para recargar');
