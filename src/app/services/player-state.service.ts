@@ -1,5 +1,6 @@
 import { Injectable } from '@angular/core';
 import { IptvChannel, IptvMovie, IptvSeries } from './data.service';
+import { ChannelResolved } from '../models/calendar.model';
 
 export type ContentType = 'channels' | 'movies' | 'series';
 export type ContentItem = IptvChannel | IptvMovie | IptvSeries;
@@ -11,6 +12,8 @@ export interface PlayerState {
   contentType: ContentType;
   volume: number;
   isMuted: boolean;
+  eventChannels: ChannelResolved[];
+  eventTitle: string;
 }
 
 @Injectable({
@@ -24,7 +27,9 @@ export class PlayerStateService {
     series: null,
     contentType: 'channels',
     volume: 1,
-    isMuted: false
+    isMuted: false,
+    eventChannels: [],
+    eventTitle: ''
   };
 
   setChannel(channel: IptvChannel): void {
@@ -101,6 +106,26 @@ export class PlayerStateService {
     this.saveState();
   }
 
+  setEventChannels(channels: ChannelResolved[]): void {
+    this.state.eventChannels = channels;
+    this.saveState();
+  }
+
+  getEventChannels(): ChannelResolved[] {
+    this.loadState();
+    return this.state.eventChannels;
+  }
+
+  setEventTitle(title: string): void {
+    this.state.eventTitle = title;
+    this.saveState();
+  }
+
+  getEventTitle(): string {
+    this.loadState();
+    return this.state.eventTitle;
+  }
+
   clear(): void {
     this.state = {
       channel: null,
@@ -108,7 +133,9 @@ export class PlayerStateService {
       series: null,
       contentType: 'channels',
       volume: 1,
-      isMuted: false
+      isMuted: false,
+      eventChannels: [],
+      eventTitle: ''
     };
     this.removeState();
   }

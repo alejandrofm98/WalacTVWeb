@@ -170,6 +170,23 @@
     </div>
   </div>
 
+  <div class="quality-selector" *ngIf="eventChannelGroups.length > 0">
+    <div class="channel-groups-display">
+      <div class="channel-group-display" *ngFor="let group of eventChannelGroups">
+        <div class="channel-group-name">{{ group.displayName }}</div>
+        <div class="channel-qualities">
+          <button
+            *ngFor="let ch of group.channels"
+            class="quality-option"
+            [class.active]="selectedEventChannel?.channel_id === ch.channel_id"
+            (click)="selectQuality(ch)">
+            {{ ch.quality || 'SD' }}
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div class="channel-options" *ngIf="availableStreams.length > 1">
     <div class="channel-section" *ngFor="let stream of availableStreams">
       <h3 class="channel-title">{{ stream.name }}</h3>

@@ -1,0 +1,161 @@
+<app-navbar></app-navbar>
+<div class="events-list-container">
+  <div class="elite-header-wrapper">
+    <div class="elite-header-content">
+      <header class="page-header">
+        <h1>Calendario Deportivo</h1>
+      </header>
+
+      <div class="controls-row">
+        <!-- Date Navigation capsule -->
+        <div class="date-navigation">
+          <button class="nav-btn" *ngIf="canGoBack" (click)="goToPreviousDay()" title="Día anterior">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M15 18l-6-6 6-6"/></svg>
+          </button>
+          
+          <div class="date-display">
+            <input type="date" [value]="selectedDate" (change)="onDateChange($any($event.target).value)" class="date-input" [min]="minDate" [max]="maxDate" />
+            <div class="date-content">
+              <span class="date-text">{{ formattedDate }}</span>
+              <span *ngIf="isToday()" class="today-badge">Hoy</span>
+            </div>
+          </div>
+          
+          <button class="nav-btn" *ngIf="canGoForward" (click)="goToNextDay()" title="Día siguiente">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 18l6-6-6-6"/></svg>
+          </button>
+        </div>
+
+        <div class="filters-row">
+          <div class="search-box">
+            <div class="input-glow"></div>
+            <input type="text" [(ngModel)]="searchQuery" placeholder="Buscar evento o equipo..." class="search-input" />
+            <span class="search-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+            </span>
+          </div>
+
+          <div class="searchable-select" *ngIf="categories.length > 0" [class.open]="isCategoryOpen">
+            <div class="select-trigger" (click)="toggleCategory()">
+              <span class="select-value">{{ selectedCategory || 'Todos los deportes' }}</span>
+              <svg class="select-arrow" [class.open]="isCategoryOpen" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/>
+              </svg>
+            </div>
+            <div class="select-dropdown" *ngIf="isCategoryOpen">
+              <input
+                type="text"
+                class="select-search"
+                placeholder="Buscar deporte..."
+                [(ngModel)]="categorySearch"
+                (click)="$event.stopPropagation()"
+              />
+              <div class="select-options">
+                <div class="select-option" [class.selected]="!selectedCategory" (click)="selectCategory('')">Todos los deportes</div>
+                <div class="select-option" *ngFor="let cat of filteredCategories" [class.selected]="selectedCategory === cat" (click)="selectCategory(cat)">{{ cat }}</div>
+                <div class="select-option empty" *ngIf="filteredCategories.length === 0">No se encontraron deportes</div>
+              </div>
+            </div>
+          </div>
+
+          <button *ngIf="searchQuery || selectedCategory" class="clear-btn" (click)="clearFilters()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 6L6 18M6 6l12 12"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <div class="events-count">
+        <span class="count-badge">{{ filteredEvents.length }}</span>
+        <span class="count-text">eventos de {{ totalEvents }}</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Estado de carga -->
+  <div *ngIf="loading" class="loading-state">
+    <div class="spinner"></div>
+    <span>Cargando eventos...</span>
+  </div>
+
+  <!-- Error -->
+  <div *ngIf="error && !loading" class="error-state">
+    <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="10"></circle>
+      <line x1="12" y1="8" x2="12" y2="12"></line>
+      <line x1="12" y1="16" x2="12.01" y2="16"></line>
+    </svg>
+    <p>{{ error }}</p>
+    <button (click)="loadEvents()" class="retry-btn">Reintentar</button>
+  </div>
+
+  <!-- Sin eventos -->
+  <div *ngIf="!loading && !error && !hasEvents" class="empty-state">
+    <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+      <line x1="16" y1="2" x2="16" y2="6"></line>
+      <line x1="8" y1="2" x2="8" y2="6"></line>
+      <line x1="3" y1="10" x2="21" y2="10"></line>
+    </svg>
+    <h3>No hay eventos</h3>
+    <p>No se encontraron eventos para {{ formattedDate }}</p>
+  </div>
+
+  <!-- Lista de eventos -->
+  <div *ngIf="!loading && !error && hasEvents" class="events-list">
+    <div class="events-grid">
+      <div *ngFor="let event of filteredEvents" 
+           class="event-card" 
+           [style.--sport-color]="getSportColor(event.categoria)">
+        
+        <div class="card-header">
+          <div class="sport-icon-container">
+            <div class="sport-icon-glow"></div>
+            <div class="sport-icon" [innerHTML]="getSportIcon(event.categoria) | safeHtml"></div>
+          </div>
+          <div class="header-meta">
+            <span class="competition-badge">{{ event.competicion || 'Evento Especial' }}</span>
+            <span class="category-name">{{ event.categoria }}</span>
+          </div>
+          <div class="time-badge">
+            <span class="time">{{ event.hora }}</span>
+          </div>
+        </div>
+
+        <div class="card-body">
+          <h3 class="event-teams" [title]="event.equipos">{{ event.equipos }}</h3>
+          
+          <div class="channels-container">
+            <div class="channels-header">
+              <span class="pulse-icon"></span>
+              DIRECTO DISPONIBLE
+            </div>
+            
+            <ng-container *ngIf="getChannelGroups(event.canales_resueltos) as groups">
+              <ng-container *ngIf="groups.length > 0">
+                <div class="channels-list">
+                  <ng-container *ngFor="let group of groups">
+                    <button
+                      *ngIf="group.channels[0]"
+                      class="channel-pill"
+                      [class.priority-zero]="group.channels[0].priority === 0"
+                      (click)="onChannelClick(group.channels[0], event.canales_resueltos, event.equipos)"
+                      [title]="'Sintonizar ' + group.displayName + ' - ' + group.channels[0].quality">
+                      <span class="channel-name">{{ group.displayName }}</span>
+                      <span class="quality-tag" *ngIf="group.channels[0].quality">{{ group.channels[0].quality }}</span>
+                    </button>
+                  </ng-container>
+                </div>
+              </ng-container>
+            </ng-container>
+
+            <div class="channels-fallback" *ngIf="(!event.canales_resueltos || event.canales_resueltos.length === 0) && event.canales_original && event.canales_original.length > 0">
+              <span class="fallback-text">Vía {{ event.canales_original.join(', ') }}</span>
+            </div>
+          </div>
+        </div>
+        
+        <div class="card-footer-accent"></div>
+      </div>
+    </div>
+  </div>
+</div>

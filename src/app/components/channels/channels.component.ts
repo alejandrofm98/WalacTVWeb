@@ -2,7 +2,7 @@ import {Component, OnInit, inject, ElementRef, ViewChild, AfterViewInit, HostLis
 import {CommonModule} from '@angular/common';
 import {Router} from '@angular/router';
 import {FormsModule} from '@angular/forms';
-import {DataService, IptvChannel, IptvMovie, IptvSeries, PaginatedResponse, ContentStats} from '../../services/data.service';
+import {DataService, IptvChannel, PaginatedResponse, ContentStats} from '../../services/data.service';
 import {PlayerStateService} from '../../services/player-state.service';
 import {slugify} from '../../utils/slugify';
 import {NavbarComponent} from '../../shared/components/navbar-component/navbar.component';
@@ -11,39 +11,28 @@ import {NumberFormatPipe} from '../../pipes/number-format.pipe';
 import {Subject} from 'rxjs';
 import {debounceTime, distinctUntilChanged} from 'rxjs/operators';
 
-type TabType = 'channels' | 'movies' | 'series';
-
 @Component({
-  selector: 'app-events-list',
+  selector: 'app-channels',
   standalone: true,
   imports: [CommonModule, FormsModule, NavbarComponent, HttpsPipe, NumberFormatPipe],
-  templateUrl: './events-list.component.html',
-  styleUrls: ['./events-list.component.css']
+  templateUrl: './channels.component.html',
+  styleUrls: ['./channels.component.css']
 })
-export class EventsListComponent implements OnInit, AfterViewInit {
+export class ChannelsComponent implements OnInit, AfterViewInit {
   @ViewChild('loadMoreTrigger') loadMoreTrigger!: ElementRef;
   @ViewChild('countrySearchInput') countrySearchInput!: ElementRef;
   @ViewChild('groupSearchInput') groupSearchInput!: ElementRef;
 
   channels: IptvChannel[] = [];
-  movies: IptvMovie[] = [];
-  series: IptvSeries[] = [];
   loading = false;
   error: string | null = null;
-  activeTab: TabType = 'channels';
 
   channelsTotal = 0;
-  moviesTotal = 0;
-  seriesTotal = 0;
 
   channelsPage = 1;
-  moviesPage = 1;
-  seriesPage = 1;
   limit = 40; // Reducido de 80 a 40 para carga más rápida
 
   hasMoreChannels = true;
-  hasMoreMovies = true;
-  hasMoreSeries = true;
 
   selectedGroup = '';
   selectedCountry = '';
@@ -81,8 +70,6 @@ export class EventsListComponent implements OnInit, AfterViewInit {
     this.dataService.getContentStats().subscribe({
       next: (stats: ContentStats) => {
         this.channelsTotal = stats.channels;
-        this.moviesTotal = stats.movies;
-        this.seriesTotal = stats.series;
       },
       error: (error) => {
         console.error('Error loading content stats:', error);
@@ -110,12 +97,8 @@ export class EventsListComponent implements OnInit, AfterViewInit {
     this.observer = new IntersectionObserver((entries) => {
       entries.forEach(entry => {
         if (entry.isIntersecting && !this.loading) {
-          if (this.activeTab === 'channels' && this.hasMoreChannels) {
+          if (this.hasMoreChannels) {
             this.loadMoreChannels();
-          } else if (this.activeTab === 'movies' && this.hasMoreMovies) {
-            this.loadMoreMovies();
-          } else if (this.activeTab === 'series' && this.hasMoreSeries) {
-            this.loadMoreSeries();
           }
         }
       });
@@ -126,48 +109,27 @@ export class EventsListComponent implements OnInit, AfterViewInit {
     }
   }
 
-  switchTab(tab: TabType) {
-    this.activeTab = tab;
-    this.channelsPage = 1;
-    this.moviesPage = 1;
-    this.seriesPage = 1;
-    this.channels = [];
-    this.movies = [];
-    this.series = [];
-    this.selectedGroup = ''; // Limpiar filtro de grupo al cambiar de pestaña
-    this.isCountryOpen = false;
-    this.isGroupOpen = false;
-    this.countrySearch = '';
-    this.groupSearch = '';
-    this.loadFilters();
-    this.loadContent();
-  }
-
   loadFilters() {
     this.loadGroups();
-    this.dataService.getCountries(this.activeTab).subscribe({
+    this.dataService.getCountries('channels').subscribe({
       next: (countries) => this.countries = countries.map(c => ({code: c.code, name: c.name}))
     });
   }
 
   onFilterChange() {
     this.channelsPage = 1;
-    this.moviesPage = 1;
-    this.seriesPage = 1;
     this.loadContent();
   }
 
   onCountryChange() {
     this.selectedGroup = '';
     this.channelsPage = 1;
-    this.moviesPage = 1;
-    this.seriesPage = 1;
     this.loadGroups();
     this.loadContent();
   }
 
   private loadGroups(): void {
-    this.dataService.getGroups(this.activeTab, this.selectedCountry || undefined).subscribe({
+    this.dataService.getGroups('channels', this.selectedCountry || undefined).subscribe({
       next: (groups) => this.groups = groups
     });
   }
@@ -180,8 +142,6 @@ export class EventsListComponent implements OnInit, AfterViewInit {
     this.isCountryOpen = false;
     this.isGroupOpen = false;
     this.channelsPage = 1;
-    this.moviesPage = 1;
-    this.seriesPage = 1;
     this.loadGroups();
     this.loadContent();
   }
@@ -193,42 +153,24 @@ export class EventsListComponent implements OnInit, AfterViewInit {
 
   performSearch(query: string) {
     this.channelsPage = 1;
-    this.moviesPage = 1;
-    this.seriesPage = 1;
     this.loadContent();
   }
 
   clearSearch() {
     this.searchQuery = '';
     this.channelsPage = 1;
-    this.moviesPage = 1;
-    this.seriesPage = 1;
     this.loadContent();
   }
 
   getSearchPlaceholder(): string {
-    switch (this.activeTab) {
-      case 'channels': return 'Buscar canales por nombre o grupo...';
-      case 'movies': return 'Buscar películas por nombre o grupo...';
-      case 'series': return 'Buscar series por nombre o grupo...';
-      default: return 'Buscar...';
-    }
+    return 'Buscar canales por nombre o grupo...';
   }
 
   loadContent() {
     this.loading = true;
     this.error = null;
-
-    if (this.activeTab === 'channels') {
-      this.channelsPage = 1;
-      this.loadMoreChannels(true);
-    } else if (this.activeTab === 'movies') {
-      this.moviesPage = 1;
-      this.loadMoreMovies(true);
-    } else {
-      this.seriesPage = 1;
-      this.loadMoreSeries(true);
-    }
+    this.channelsPage = 1;
+    this.loadMoreChannels(true);
   }
 
   loadMoreChannels(reset: boolean = false) {
@@ -252,87 +194,25 @@ export class EventsListComponent implements OnInit, AfterViewInit {
     });
   }
 
-  loadMoreMovies(reset: boolean = false) {
-    if (reset) {
-      this.movies = [];
-    }
-
-    this.dataService.getMovies(this.moviesPage, this.limit, this.selectedGroup, this.selectedCountry, this.searchQuery).subscribe({
-      next: (response: PaginatedResponse<IptvMovie>) => {
-        this.movies = [...this.movies, ...response.items];
-        this.moviesTotal = response.total;
-        this.moviesPage += 1;
-        this.hasMoreMovies = response.has_next;
-        this.loading = false;
-      },
-      error: (err) => {
-        this.error = err.message || 'Error al cargar películas';
-        console.error('Error loading movies:', err);
-        this.loading = false;
-      }
-    });
-  }
-
-  loadMoreSeries(reset: boolean = false) {
-    if (reset) {
-      this.series = [];
-    }
-
-    this.dataService.getSeries(this.seriesPage, this.limit, this.selectedGroup, this.selectedCountry, this.searchQuery).subscribe({
-      next: (response: PaginatedResponse<IptvSeries>) => {
-        this.series = [...this.series, ...response.items];
-        this.seriesTotal = response.total;
-        this.seriesPage += 1;
-        this.hasMoreSeries = response.has_next;
-        this.loading = false;
-      },
-      error: (err) => {
-        this.error = err.message || 'Error al cargar series';
-        console.error('Error loading series:', err);
-        this.loading = false;
-      }
-    });
-  }
-
   onChannelClick(channel: IptvChannel) {
     this.playerState.setChannel(channel);
     this.router.navigate(['/player', slugify(channel.nombre)]);
   }
 
-  onMovieClick(movie: IptvMovie) {
-    this.playerState.setMovie(movie);
-    this.router.navigate(['/player', slugify(movie.nombre)]);
-  }
-
-  onSeriesClick(series: IptvSeries) {
-    this.playerState.setSeries(series);
-    this.router.navigate(['/player', slugify(series.nombre)]);
-  }
-
-  getPosterUrl(item: IptvChannel | IptvMovie | IptvSeries): string {
+  getPosterUrl(item: IptvChannel): string {
     return item.logo || '';
   }
 
-  getCategories(item: IptvChannel | IptvMovie | IptvSeries): string {
+  getCategories(item: IptvChannel): string {
     return item.grupo || '';
   }
 
   get totalItems(): number {
-    switch (this.activeTab) {
-      case 'channels': return this.channelsTotal;
-      case 'movies': return this.moviesTotal;
-      case 'series': return this.seriesTotal;
-      default: return 0;
-    }
+    return this.channelsTotal;
   }
 
   get displayedItems(): number {
-    switch (this.activeTab) {
-      case 'channels': return this.channels.length;
-      case 'movies': return this.movies.length;
-      case 'series': return this.series.length;
-      default: return 0;
-    }
+    return this.channels.length;
   }
 
   // Searchable select getters

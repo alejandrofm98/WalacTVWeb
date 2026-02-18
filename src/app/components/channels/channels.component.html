@@ -1,32 +1,14 @@
 <app-navbar></app-navbar>
 <div class="events-container">
   <header class="events-header">
-    <h1>Contenido IPTV</h1>
-    <p class="subtitle">Explora canales, películas y series en streaming</p>
+    <h1>Canales</h1>
   </header>
 
   <div class="tab-container">
-    <button
-      [class.active]="activeTab === 'channels'"
-      (click)="switchTab('channels')"
-      class="tab-button">
+    <div class="tab-info">
       <span class="tab-text">Canales</span>
       <span class="count">{{ channelsTotal | numberFormat }}</span>
-    </button>
-    <button
-      [class.active]="activeTab === 'movies'"
-      (click)="switchTab('movies')"
-      class="tab-button">
-      <span class="tab-text">Películas</span>
-      <span class="count">{{ moviesTotal | numberFormat }}</span>
-    </button>
-    <button
-      [class.active]="activeTab === 'series'"
-      (click)="switchTab('series')"
-      class="tab-button">
-      <span class="tab-text">Series</span>
-      <span class="count">{{ seriesTotal | numberFormat }}</span>
-    </button>
+    </div>
   </div>
 
   <div class="search-filters-container">
@@ -110,7 +92,7 @@
     <button (click)="loadContent()" class="retry-button">Reintentar</button>
   </div>
 
-  <div *ngIf="!loading && !error && activeTab === 'channels' && displayedItems === 0" class="no-events">
+  <div *ngIf="!loading && !error && displayedItems === 0" class="no-events">
     <div class="empty-state">
       <svg class="empty-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
@@ -120,27 +102,7 @@
     </div>
   </div>
 
-  <div *ngIf="!loading && !error && activeTab === 'movies' && displayedItems === 0" class="no-events">
-    <div class="empty-state">
-      <svg class="empty-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
-              d="M7 4v16M17 4v16M3 8h4m10 0h4M3 12h18M3 16h4m10 0h4M4 20h16a1 1 0 001-1V5a1 1 0 00-1-1H4a1 1 0 00-1 1v14a1 1 0 001 1z"/>
-      </svg>
-      <h2>No hay películas disponibles</h2>
-    </div>
-  </div>
-
-  <div *ngIf="!loading && !error && activeTab === 'series' && displayedItems === 0" class="no-events">
-    <div class="empty-state">
-      <svg class="empty-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
-              d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/>
-      </svg>
-      <h2>No hay series disponibles</h2>
-    </div>
-  </div>
-
-  <div *ngIf="!loading && !error && activeTab === 'channels' && displayedItems > 0" class="events-grid">
+  <div *ngIf="!loading && !error && displayedItems > 0" class="events-grid">
     <div
       *ngFor="let channel of channels"
       class="event-card"
@@ -167,64 +129,10 @@
     </div>
   </div>
 
-  <div *ngIf="!loading && !error && activeTab === 'movies' && displayedItems > 0" class="events-grid">
-    <div
-      *ngFor="let movie of movies"
-      class="event-card"
-      (click)="onMovieClick(movie)">
-      <div class="event-content">
-        <img *ngIf="getPosterUrl(movie)" [src]="getPosterUrl(movie) | https" alt="{{ movie.nombre }}" class="poster-image">
-        <div class="poster-placeholder" *ngIf="!getPosterUrl(movie)">
-          <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                  d="M7 4v16M17 4v16M3 8h4m10 0h4M3 12h18M3 16h4m10 0h4M4 20h16a1 1 0 001-1V5a1 1 0 00-1-1H4a1 1 0 00-1 1v14a1 1 0 001 1z"/>
-          </svg>
-        </div>
-        <h3 class="event-title">{{ movie.nombre }}</h3>
-        <div class="event-category" *ngIf="getCategories(movie)">
-          <svg class="event-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"/>
-          </svg>
-          <span>{{ getCategories(movie) }}</span>
-        </div>
-        <div class="event-meta" *ngIf="movie.country">
-          <span>{{ movie.country }}</span>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <div *ngIf="!loading && !error && activeTab === 'series' && displayedItems > 0" class="events-grid">
-    <div
-      *ngFor="let serie of series"
-      class="event-card"
-      (click)="onSeriesClick(serie)">
-      <div class="event-content">
-        <img *ngIf="getPosterUrl(serie)" [src]="getPosterUrl(serie) | https" alt="{{ serie.nombre }}" class="poster-image">
-        <div class="poster-placeholder" *ngIf="!getPosterUrl(serie)">
-          <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                  d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/>
-          </svg>
-        </div>
-        <h3 class="event-title">{{ serie.nombre }}</h3>
-        <div class="event-category" *ngIf="getCategories(serie)">
-          <svg class="event-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"/>
-          </svg>
-          <span>{{ getCategories(serie) }}</span>
-        </div>
-        <div class="event-meta" *ngIf="serie.country">
-          <span>{{ serie.country }}</span>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <div #loadMoreTrigger class="load-more-trigger" *ngIf="hasMoreChannels || hasMoreMovies || hasMoreSeries">
+  <div #loadMoreTrigger class="load-more-trigger" *ngIf="hasMoreChannels">
     <div *ngIf="loading && displayedItems > 0" class="loading-more">
       <div class="spinner small"></div>
-      <span>Cargando más contenido...</span>
+      <span>Cargando más canales...</span>
     </div>
   </div>
 </div>

@@ -84,10 +84,23 @@
 .video-element {
   width: 100%;
   height: auto;
-  display: block;
+  display: block !important;
   aspect-ratio: 16 / 9;
   min-height: 500px;
   background: #000;
+}
+
+/* Video.js error state */
+.video-js.vjs-error .vjs-error-display {
+  display: none !important;
+}
+
+.video-js.vjs-error {
+  font-size: 0 !important;
+}
+
+.video-js .vjs-loading-spinner {
+  display: block !important;
 }
 
 /* Ocultar controles nativos del video */
@@ -1223,4 +1236,171 @@ html:-webkit-full-screen {
     font-size: 14px;
     padding: 5px 12px;
   }
+}
+
+/* =========================================
+   QUALITY SELECTOR
+   ========================================= */
+
+.quality-selector {
+  width: 100%;
+  max-width: 800px;
+  margin: 16px auto;
+  padding: 16px 20px;
+  background: rgba(20, 25, 40, 0.9);
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.quality-header {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+.quality-label {
+  font-family: 'Outfit', sans-serif;
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.6);
+  font-weight: 500;
+}
+
+.quality-current {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 18px;
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  border: none;
+  border-radius: 8px;
+  color: white;
+  font-family: 'Outfit', sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.quality-current:hover {
+  transform: scale(1.02);
+  box-shadow: 0 4px 15px rgba(99, 102, 241, 0.4);
+}
+
+.quality-current svg {
+  width: 14px;
+  height: 14px;
+}
+
+.quality-options {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  animation: fadeIn 0.2s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.quality-option {
+  padding: 10px 20px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  color: rgba(255, 255, 255, 0.8);
+  font-family: 'Outfit', sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.quality-option:hover {
+  background: rgba(99, 102, 241, 0.2);
+  border-color: rgba(99, 102, 241, 0.4);
+  color: white;
+}
+
+.quality-option.active {
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  border-color: transparent;
+  color: white;
+  box-shadow: 0 4px 15px rgba(99, 102, 241, 0.3);
+}
+
+@media (max-width: 640px) {
+  .quality-selector {
+    margin: 12px 12px;
+    padding: 12px 16px;
+  }
+
+  .quality-options {
+    gap: 8px;
+  }
+
+  .quality-option {
+    padding: 8px 16px;
+    font-size: 12px;
+  }
+}
+
+/* =========================================
+   CHANNEL GROUPS DISPLAY
+   ========================================= */
+
+.channel-groups-display {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.channel-group-display {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.channel-group-name {
+  font-family: 'Outfit', sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.7);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.channel-qualities {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.channel-qualities .quality-option {
+  padding: 8px 16px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  color: rgba(255, 255, 255, 0.8);
+  font-family: 'Outfit', sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.channel-qualities .quality-option:hover {
+  background: rgba(99, 102, 241, 0.2);
+  border-color: rgba(99, 102, 241, 0.4);
+  color: white;
+}
+
+.channel-qualities .quality-option.active {
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  border-color: transparent;
+  color: white;
+  box-shadow: 0 4px 15px rgba(99, 102, 241, 0.3);
 }
