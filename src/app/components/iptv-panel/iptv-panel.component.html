@@ -1,8 +1,8 @@
 <app-navbar></app-navbar>
 <div class="app-container">
   <header>
-    <h1>IPTV Admin Panel</h1>
-    <p>Gestión de usuarios y estadísticas</p>
+    <h1>IPTV Panel</h1>
+    <p class="subtitle">Gestión de usuarios y estadísticas del sistema</p>
   </header>
 
   <div class="stats">
@@ -25,42 +25,116 @@
   </div>
 
   <div class="card">
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+    <div class="card-header">
       <h2>Usuarios</h2>
-      <div style="display: flex; gap: 10px;">
+      <div class="card-actions">
         <button class="btn btn-secondary" (click)="reloadTemplate()">Recargar Template</button>
         <button class="btn btn-primary" (click)="openAddUser()">+ Nuevo Usuario</button>
       </div>
     </div>
 
-    <table id="usersTable">
-      <thead>
-        <tr>
-          <th>Username</th>
-          <th>Estado</th>
-          <th>Max Conexiones</th>
-          <th>Creado</th>
-          <th>Acciones</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr *ngFor="let user of users">
-          <td>{{ user.username }}</td>
-          <td><span [style.color]="user.is_active ? '#10b981' : '#ef4444'">{{ user.is_active ? 'Activo' : 'Inactivo' }}</span></td>
-          <td>{{ user.max_connections }}</td>
-          <td>{{ formatDate(user.created_at) }}</td>
-          <td>
-            <button class="btn btn-primary" style="padding: 5px 10px; font-size: 12px; margin-right: 5px;" (click)="showPlaylist(user.username)">Ver M3U</button>
-            <button class="btn btn-danger" style="padding: 5px 10px; font-size: 12px;" (click)="deleteUser(user.id)">Eliminar</button>
-          </td>
-        </tr>
-      </tbody>
-    </table>
+    <div class="table-container">
+      <table id="usersTable">
+        <thead>
+          <tr>
+            <th></th>
+            <th>Username</th>
+            <th>Estado</th>
+            <th>Sesiones</th>
+            <th>Max Conexiones</th>
+            <th>Expira</th>
+            <th>Creado</th>
+            <th>Acciones</th>
+          </tr>
+        </thead>
+        <tbody>
+          <ng-container *ngFor="let user of users">
+            <tr class="user-row" [class.has-sessions]="user.sessionsCount > 0">
+              <td class="expand-cell">
+                <button 
+                  class="expand-btn" 
+                  *ngIf="user.sessionsCount > 0"
+                  [class.expanded]="user.expanded"
+                  (click)="toggleUserSessions(user.id)">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M9 18l6-6-6-6"/>
+                  </svg>
+                </button>
+              </td>
+              <td><strong>{{ user.username }}</strong></td>
+              <td>
+                <span class="status-badge" [class.status-active]="user.is_active" [class.status-inactive]="!user.is_active">
+                  <span class="status-dot"></span>
+                  {{ user.is_active ? 'Activo' : 'Inactivo' }}
+                </span>
+              </td>
+              <td>
+                <span class="sessions-badge" [class.active]="user.sessionsCount > 0">
+                  {{ user.sessionsCount }}
+                </span>
+              </td>
+              <td>{{ user.max_connections }}</td>
+              <td>
+                <span class="status-badge"
+                      [class.status-inactive]="isExpired(user)"
+                      [class.status-expiring]="!isExpired(user) && isExpiringSoon(user)"
+                      [class.status-active]="!isExpired(user) && !isExpiringSoon(user) && user.expires_at"
+                      *ngIf="user.expires_at; else neverExpires">
+                  {{ formatExpires(user.expires_at) }}
+                </span>
+                <ng-template #neverExpires>
+                  <span class="status-badge status-active">Sin límite</span>
+                </ng-template>
+              </td>
+              <td>{{ formatDate(user.created_at) }}</td>
+              <td>
+                <div class="action-buttons">
+                  <button class="btn btn-primary btn-sm" (click)="showPlaylist(user.username)">Ver M3U</button>
+                  <button class="btn btn-danger btn-sm" (click)="deleteUser(user.id)">Eliminar</button>
+                </div>
+              </td>
+            </tr>
+            
+            <!-- Sessions Row -->
+            <tr class="sessions-row" *ngIf="user.expanded && user.sessions.length > 0">
+              <td colspan="8" class="sessions-cell">
+                <div class="sessions-panel">
+                  <div class="sessions-header">
+                    <span class="sessions-title">Dispositivos conectados ({{ user.sessionsCount }})</span>
+                    <button class="btn btn-danger btn-sm" (click)="disconnectAllUserDevices(user.id)">
+                      Desconectar todos
+                    </button>
+                  </div>
+                  <div class="sessions-list">
+                    <div class="session-item" *ngFor="let session of user.sessions">
+                      <div class="session-icon">{{ getDeviceTypeIcon(session.device_type) }}</div>
+                      <div class="session-info">
+                        <div class="session-name">{{ session.device_name }}</div>
+                        <div class="session-meta">
+                          <span class="session-ip">{{ session.ip_address }}</span>
+                          <span class="session-divider">•</span>
+                          <span class="session-activity">Activo {{ formatLastActivity(session.last_activity) }}</span>
+                        </div>
+                      </div>
+                      <button class="btn btn-danger btn-sm btn-icon" (click)="disconnectDevice(user.id, session.device_id)" title="Desconectar">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                          <path d="M18 6L6 18M6 6l12 12"/>
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </td>
+            </tr>
+          </ng-container>
+        </tbody>
+      </table>
+    </div>
   </div>
 
   <div class="modal" [class.active]="showAddUser">
     <div class="modal-content">
-      <h2 style="margin-bottom: 20px;">Crear Usuario</h2>
+      <h2>Crear Usuario</h2>
       <div class="form-group">
         <label>Username</label>
         <input [(ngModel)]="newUsername" placeholder="nombre_usuario" />
@@ -73,22 +147,26 @@
         <label>Max Conexiones Simultáneas</label>
         <input type="number" [(ngModel)]="newMaxConnections" min="1" />
       </div>
-      <div style="display: flex; gap: 10px; margin-top: 20px;">
-        <button class="btn btn-success" (click)="createUser()">Crear</button>
-        <button class="btn" (click)="closeModal()" style="background: #475569;">Cancelar</button>
+      <div class="form-group">
+        <label>Fecha de Expiración (opcional)</label>
+        <input type="date" [(ngModel)]="newExpiresAt" />
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-success" (click)="createUser()">Crear Usuario</button>
+        <button class="btn btn-secondary" (click)="closeModal()">Cancelar</button>
       </div>
     </div>
   </div>
 
   <div class="modal" [class.active]="showPlaylistModal">
     <div class="modal-content">
-      <h2 style="margin-bottom: 20px;">URL Playlist M3U</h2>
-      <div class="playlist-url" style="margin-bottom: 10px; word-break: break-all;">{{ playlistUrl }}</div>
-      <p style="margin-top: 0; color: #94a3b8; font-size: 14px;">
-        Usa esta URL en tu app IPTV (TiviMate, VLC, etc.)
-      </p>
-      <button class="btn btn-primary" (click)="copyPlaylistUrl()" style="margin-top: 10px;">Copiar URL</button>
-      <button class="btn" (click)="closeModal()" style="background: #475569; margin-top: 10px; margin-left: 10px;">Cerrar</button>
+      <h2>URL Playlist M3U</h2>
+      <div class="playlist-url">{{ playlistUrl }}</div>
+      <p class="playlist-hint">Usa esta URL en tu app IPTV (TiviMate, VLC, etc.)</p>
+      <div class="modal-actions">
+        <button class="btn btn-primary" (click)="copyPlaylistUrl()">Copiar URL</button>
+        <button class="btn btn-secondary" (click)="closeModal()">Cerrar</button>
+      </div>
     </div>
   </div>
 </div>

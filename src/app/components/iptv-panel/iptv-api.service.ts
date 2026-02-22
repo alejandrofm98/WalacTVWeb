@@ -23,7 +23,7 @@ export class IptvApiService {
   }
 
   getStats(): Observable<any> {
-    return this.http.get<any>(`${this.base}/api/stats`, { headers: this.getAuthHeaders() }).pipe(
+    return this.http.get<any>(`${this.base}/api/admin/stats`, { headers: this.getAuthHeaders() }).pipe(
       catchError(() => of({
         total_users: 0,
         active_users: 0,
@@ -36,13 +36,14 @@ export class IptvApiService {
   }
 
   getUsers(): Observable<any[]> {
-    return this.http.get<any[]>(`${this.base}/api/users`, { headers: this.getAuthHeaders() }).pipe(
+    return this.http.get<any>(`${this.base}/api/admin/users`, { headers: this.getAuthHeaders() }).pipe(
+      map(response => response?.items || []),
       catchError(() => of([]))
     );
   }
 
   createUser(payload: any): Observable<any> {
-    return this.http.post(`${this.base}/api/users`, payload, { headers: this.getAuthHeaders() }).pipe(
+    return this.http.post(`${this.base}/api/admin/users`, payload, { headers: this.getAuthHeaders() }).pipe(
       catchError(err => {
         console.error('Error creating user:', err);
         return of(null);
@@ -51,7 +52,7 @@ export class IptvApiService {
   }
 
   deleteUser(id: string): Observable<any> {
-    return this.http.delete(`${this.base}/api/users/${id}`, { headers: this.getAuthHeaders() }).pipe(
+    return this.http.delete(`${this.base}/api/admin/users/${id}`, { headers: this.getAuthHeaders() }).pipe(
       catchError(err => {
         console.error('Error deleting user:', err);
         return of(null);
@@ -60,7 +61,7 @@ export class IptvApiService {
   }
 
   updateUser(id: string, payload: any): Observable<any> {
-    return this.http.put(`${this.base}/api/users/${id}`, payload, { headers: this.getAuthHeaders() }).pipe(
+    return this.http.put(`${this.base}/api/admin/users/${id}`, payload, { headers: this.getAuthHeaders() }).pipe(
       catchError(err => {
         console.error('Error updating user:', err);
         return of(null);
@@ -68,8 +69,39 @@ export class IptvApiService {
     );
   }
 
+  getSessions(): Observable<any[]> {
+    return this.http.get<any>(`${this.base}/api/admin/sessions`, { headers: this.getAuthHeaders() }).pipe(
+      map(response => response?.items || []),
+      catchError(() => of([]))
+    );
+  }
+
+  getUserDevices(userId: string): Observable<any[]> {
+    return this.http.get<any[]>(`${this.base}/api/admin/users/${userId}/devices`, { headers: this.getAuthHeaders() }).pipe(
+      catchError(() => of([]))
+    );
+  }
+
+  disconnectDevice(userId: string, deviceId: string): Observable<any> {
+    return this.http.delete(`${this.base}/api/admin/users/${userId}/devices/${deviceId}`, { headers: this.getAuthHeaders() }).pipe(
+      catchError(err => {
+        console.error('Error disconnecting device:', err);
+        return of(null);
+      })
+    );
+  }
+
+  disconnectAllDevices(userId: string): Observable<any> {
+    return this.http.delete(`${this.base}/api/admin/users/${userId}/devices`, { headers: this.getAuthHeaders() }).pipe(
+      catchError(err => {
+        console.error('Error disconnecting all devices:', err);
+        return of(null);
+      })
+    );
+  }
+
   reloadTemplate(): Observable<any> {
-    return this.http.post(`${this.base}/api/admin/reload-template`, {}, { headers: this.getAuthHeaders() }).pipe(
+    return this.http.post(`${this.base}/api/admin/content/reload`, {}, { headers: this.getAuthHeaders() }).pipe(
       catchError(err => {
         console.error('Error reloading template:', err);
         return of(null);
