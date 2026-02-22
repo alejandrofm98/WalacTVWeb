@@ -39,12 +39,12 @@
             placeholder="Buscar país..."
             [(ngModel)]="countrySearch"
             (click)="$event.stopPropagation()"
-            (input)="$event.stopPropagation()"
+            (input)="$event.stopPropagation(); highlightedCountryIndex = -1"
             (keydown)="onCountryKeydown($event)"
           />
-          <div class="select-options">
-            <div class="select-option" *ngIf="!countrySearch || 'todos los países'.includes(countrySearch.toLowerCase())" [class.selected]="!selectedCountry" (click)="selectCountry('')">Todos los países</div>
-            <div class="select-option" *ngFor="let country of filteredCountries" [class.selected]="selectedCountry === country.code" (click)="selectCountry(country.code)">{{ country.name }}</div>
+          <div class="select-options" #countryOptions>
+            <div class="select-option" *ngIf="!countrySearch || 'todos los países'.includes(countrySearch.toLowerCase())" [class.selected]="!selectedCountry" [class.highlighted]="highlightedCountryIndex === 0" (click)="selectCountry('')">Todos los países</div>
+            <div class="select-option" *ngFor="let country of filteredCountries; let i = index" [class.selected]="selectedCountry === country.code" [class.highlighted]="highlightedCountryIndex === i + 1" (click)="selectCountry(country.code)">{{ country.name }}</div>
             <div class="select-option empty" *ngIf="(filteredCountries.length === 0 && !countrySearch) || (filteredCountries.length === 0 && countrySearch && !'todos los países'.includes(countrySearch.toLowerCase()))">No se encontraron países</div>
           </div>
         </div>
@@ -65,12 +65,12 @@
             placeholder="Buscar grupo..."
             [(ngModel)]="groupSearch"
             (click)="$event.stopPropagation()"
-            (input)="$event.stopPropagation()"
+            (input)="$event.stopPropagation(); highlightedGroupIndex = -1"
             (keydown)="onGroupKeydown($event)"
           />
-          <div class="select-options options-multiline">
-            <div class="select-option option-multiline" *ngIf="!groupSearch || 'todos los grupos'.includes(groupSearch.toLowerCase())" [class.selected]="!selectedGroup" (click)="selectGroup('')">Todos los grupos</div>
-            <div class="select-option option-multiline" *ngFor="let group of filteredGroups" [class.selected]="selectedGroup === group" (click)="selectGroup(group)">{{ group }}</div>
+          <div class="select-options options-multiline" #groupOptions>
+            <div class="select-option option-multiline" *ngIf="!groupSearch || 'todos los grupos'.includes(groupSearch.toLowerCase())" [class.selected]="!selectedGroup" [class.highlighted]="highlightedGroupIndex === 0" (click)="selectGroup('')">Todos los grupos</div>
+            <div class="select-option option-multiline" *ngFor="let group of filteredGroups; let i = index" [class.selected]="selectedGroup === group" [class.highlighted]="highlightedGroupIndex === i + 1" (click)="selectGroup(group)">{{ group }}</div>
             <div class="select-option option-multiline empty" *ngIf="(filteredGroups.length === 0 && !groupSearch) || (filteredGroups.length === 0 && groupSearch && !'todos los grupos'.includes(groupSearch.toLowerCase()))">No se encontraron grupos</div>
           </div>
         </div>

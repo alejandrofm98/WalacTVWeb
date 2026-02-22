@@ -4,6 +4,7 @@ import {Router} from '@angular/router';
 import {FormsModule} from '@angular/forms';
 import {DataService, IptvChannel, PaginatedResponse, ContentStats} from '../../services/data.service';
 import {PlayerStateService} from '../../services/player-state.service';
+import {FiltersStateService} from '../../services/filters-state.service';
 import {slugify} from '../../utils/slugify';
 import {NavbarComponent} from '../../shared/components/navbar-component/navbar.component';
 import {HttpsPipe} from '../../pipes/https.pipe';
@@ -22,6 +23,8 @@ export class ChannelsComponent implements OnInit, AfterViewInit {
   @ViewChild('loadMoreTrigger') loadMoreTrigger!: ElementRef;
   @ViewChild('countrySearchInput') countrySearchInput!: ElementRef;
   @ViewChild('groupSearchInput') groupSearchInput!: ElementRef;
+  @ViewChild('countryOptions') countryOptions!: ElementRef;
+  @ViewChild('groupOptions') groupOptions!: ElementRef;
 
   channels: IptvChannel[] = [];
   loading = false;
@@ -47,15 +50,19 @@ export class ChannelsComponent implements OnInit, AfterViewInit {
   isGroupOpen = false;
   countrySearch = '';
   groupSearch = '';
+  highlightedCountryIndex = -1;
+  highlightedGroupIndex = -1;
 
   private dataService = inject(DataService);
   private router = inject(Router);
   private playerState = inject(PlayerStateService);
+  private filtersState = inject(FiltersStateService);
   private observer: IntersectionObserver | null = null;
 
   ngOnInit() {
     this.loadContentStats();
     this.loadFilters();
+    this.restoreFilters();
     this.loadContent();
 
     this.searchSubject.pipe(
@@ -116,13 +123,30 @@ export class ChannelsComponent implements OnInit, AfterViewInit {
     });
   }
 
+  restoreFilters() {
+    const savedFilters = this.filtersState.getFilters();
+    this.selectedGroup = savedFilters.selectedGroup;
+    this.selectedCountry = savedFilters.selectedCountry;
+    this.searchQuery = savedFilters.searchQuery;
+  }
+
+  saveFilters() {
+    this.filtersState.setFilters({
+      selectedGroup: this.selectedGroup,
+      selectedCountry: this.selectedCountry,
+      searchQuery: this.searchQuery
+    });
+  }
+
   onFilterChange() {
+    this.saveFilters();
     this.channelsPage = 1;
     this.loadContent();
   }
 
   onCountryChange() {
     this.selectedGroup = '';
+    this.saveFilters();
     this.channelsPage = 1;
     this.loadGroups();
     this.loadContent();
@@ -139,10 +163,13 @@ export class ChannelsComponent implements OnInit, AfterViewInit {
     this.selectedCountry = '';
     this.countrySearch = '';
     this.groupSearch = '';
+    this.searchQuery = '';
     this.isCountryOpen = false;
     this.isGroupOpen = false;
     this.channelsPage = 1;
+    this.filtersState.clearFilters();
     this.loadGroups();
+    this.loadContentStats();
     this.loadContent();
   }
 
@@ -152,12 +179,14 @@ export class ChannelsComponent implements OnInit, AfterViewInit {
   }
 
   performSearch(query: string) {
+    this.saveFilters();
     this.channelsPage = 1;
     this.loadContent();
   }
 
   clearSearch() {
     this.searchQuery = '';
+    this.saveFilters();
     this.channelsPage = 1;
     this.loadContent();
   }
@@ -181,7 +210,9 @@ export class ChannelsComponent implements OnInit, AfterViewInit {
     this.dataService.getChannels(this.channelsPage, this.limit, this.selectedGroup, this.selectedCountry, this.searchQuery).subscribe({
       next: (response: PaginatedResponse<IptvChannel>) => {
         this.channels = [...this.channels, ...response.items];
-        this.channelsTotal = response.total;
+        if (this.hasActiveFilters()) {
+          this.channelsTotal = response.total;
+        }
         this.channelsPage += 1;
         this.hasMoreChannels = response.has_next;
         this.loading = false;
@@ -192,6 +223,10 @@ export class ChannelsComponent implements OnInit, AfterViewInit {
         this.loading = false;
       }
     });
+  }
+
+  private hasActiveFilters(): boolean {
+    return !!(this.selectedGroup || this.selectedCountry || this.searchQuery);
   }
 
   onChannelClick(channel: IptvChannel) {
@@ -240,6 +275,7 @@ export class ChannelsComponent implements OnInit, AfterViewInit {
     if (this.isCountryOpen) {
       this.isGroupOpen = false;
       this.countrySearch = '';
+      this.highlightedCountryIndex = -1;
       setTimeout(() => {
         this.countrySearchInput?.nativeElement?.focus();
       }, 50);
@@ -251,6 +287,7 @@ export class ChannelsComponent implements OnInit, AfterViewInit {
     if (this.isGroupOpen) {
       this.isCountryOpen = false;
       this.groupSearch = '';
+      this.highlightedGroupIndex = -1;
       setTimeout(() => {
         this.groupSearchInput?.nativeElement?.focus();
       }, 50);
@@ -258,22 +295,70 @@ export class ChannelsComponent implements OnInit, AfterViewInit {
   }
 
   onCountryKeydown(event: KeyboardEvent): void {
-    if (event.key === 'Enter') {
+    const options = this.filteredCountries;
+    const totalOptions = options.length + 1;
+
+    if (event.key === 'ArrowDown') {
       event.preventDefault();
-      const firstCountry = this.filteredCountries[0];
-      if (firstCountry) {
-        this.selectCountry(firstCountry.code);
+      this.highlightedCountryIndex = Math.min(this.highlightedCountryIndex + 1, totalOptions - 1);
+      this.scrollToCountryOption();
+    } else if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      this.highlightedCountryIndex = Math.max(this.highlightedCountryIndex - 1, 0);
+      this.scrollToCountryOption();
+    } else if (event.key === 'Enter') {
+      event.preventDefault();
+      if (this.highlightedCountryIndex === 0) {
+        this.selectCountry('');
+      } else if (this.highlightedCountryIndex > 0 && options[this.highlightedCountryIndex - 1]) {
+        this.selectCountry(options[this.highlightedCountryIndex - 1].code);
+      } else if (options.length > 0) {
+        this.selectCountry(options[0].code);
       }
+    } else if (event.key === 'Escape') {
+      this.isCountryOpen = false;
     }
   }
 
   onGroupKeydown(event: KeyboardEvent): void {
-    if (event.key === 'Enter') {
+    const options = this.filteredGroups;
+    const totalOptions = options.length + 1;
+
+    if (event.key === 'ArrowDown') {
       event.preventDefault();
-      const firstGroup = this.filteredGroups[0];
-      if (firstGroup) {
-        this.selectGroup(firstGroup);
+      this.highlightedGroupIndex = Math.min(this.highlightedGroupIndex + 1, totalOptions - 1);
+      this.scrollToGroupOption();
+    } else if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      this.highlightedGroupIndex = Math.max(this.highlightedGroupIndex - 1, 0);
+      this.scrollToGroupOption();
+    } else if (event.key === 'Enter') {
+      event.preventDefault();
+      if (this.highlightedGroupIndex === 0) {
+        this.selectGroup('');
+      } else if (this.highlightedGroupIndex > 0 && options[this.highlightedGroupIndex - 1]) {
+        this.selectGroup(options[this.highlightedGroupIndex - 1]);
+      } else if (options.length > 0) {
+        this.selectGroup(options[0]);
       }
+    } else if (event.key === 'Escape') {
+      this.isGroupOpen = false;
+    }
+  }
+
+  private scrollToCountryOption(): void {
+    if (!this.countryOptions?.nativeElement) return;
+    const options = this.countryOptions.nativeElement.querySelectorAll('.select-option');
+    if (options[this.highlightedCountryIndex]) {
+      options[this.highlightedCountryIndex].scrollIntoView({ block: 'nearest' });
+    }
+  }
+
+  private scrollToGroupOption(): void {
+    if (!this.groupOptions?.nativeElement) return;
+    const options = this.groupOptions.nativeElement.querySelectorAll('.select-option');
+    if (options[this.highlightedGroupIndex]) {
+      options[this.highlightedGroupIndex].scrollIntoView({ block: 'nearest' });
     }
   }
 
@@ -281,6 +366,9 @@ export class ChannelsComponent implements OnInit, AfterViewInit {
     this.selectedCountry = code;
     this.isCountryOpen = false;
     this.countrySearch = '';
+    if (!code && !this.selectedGroup && !this.searchQuery) {
+      this.loadContentStats();
+    }
     this.onCountryChange();
   }
 
@@ -288,6 +376,9 @@ export class ChannelsComponent implements OnInit, AfterViewInit {
     this.selectedGroup = group;
     this.isGroupOpen = false;
     this.groupSearch = '';
+    if (!group && !this.selectedCountry && !this.searchQuery) {
+      this.loadContentStats();
+    }
     this.onFilterChange();
   }
 

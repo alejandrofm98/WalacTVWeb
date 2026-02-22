@@ -1,4 +1,4 @@
-import { Component, OnInit, inject } from '@angular/core';
+import { Component, OnInit, inject, ElementRef, ViewChild, HostListener } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
@@ -25,6 +25,9 @@ export interface ChannelGroup {
   styleUrls: ['./events-list.component.css']
 })
 export class EventsListComponent implements OnInit {
+  @ViewChild('categorySearchInput') categorySearchInput!: ElementRef;
+  @ViewChild('categoryOptions') categoryOptions!: ElementRef;
+
   private calendarService = inject(CalendarService);
   private playerState = inject(PlayerStateService);
   private dataService = inject(DataService);
@@ -42,6 +45,7 @@ export class EventsListComponent implements OnInit {
   categories: string[] = [];
   categorySearch = '';
   isCategoryOpen = false;
+  highlightedCategoryIndex = -1;
 
   ngOnInit(): void {
     // Establecer fecha de hoy por defecto
@@ -228,12 +232,17 @@ export class EventsListComponent implements OnInit {
     this.searchQuery = '';
     this.selectedCategory = '';
     this.categorySearch = '';
+    this.highlightedCategoryIndex = -1;
   }
 
   toggleCategory(): void {
     this.isCategoryOpen = !this.isCategoryOpen;
-    if (!this.isCategoryOpen) {
+    if (this.isCategoryOpen) {
       this.categorySearch = '';
+      this.highlightedCategoryIndex = -1;
+      setTimeout(() => {
+        this.categorySearchInput?.nativeElement?.focus();
+      }, 50);
     }
   }
 
@@ -241,6 +250,41 @@ export class EventsListComponent implements OnInit {
     this.selectedCategory = category;
     this.isCategoryOpen = false;
     this.categorySearch = '';
+    this.highlightedCategoryIndex = -1;
+  }
+
+  onCategoryKeydown(event: KeyboardEvent): void {
+    const options = this.filteredCategories;
+    const totalOptions = options.length + 1;
+
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      this.highlightedCategoryIndex = Math.min(this.highlightedCategoryIndex + 1, totalOptions - 1);
+      this.scrollToCategoryOption();
+    } else if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      this.highlightedCategoryIndex = Math.max(this.highlightedCategoryIndex - 1, 0);
+      this.scrollToCategoryOption();
+    } else if (event.key === 'Enter') {
+      event.preventDefault();
+      if (this.highlightedCategoryIndex === 0) {
+        this.selectCategory('');
+      } else if (this.highlightedCategoryIndex > 0 && options[this.highlightedCategoryIndex - 1]) {
+        this.selectCategory(options[this.highlightedCategoryIndex - 1]);
+      } else if (options.length > 0) {
+        this.selectCategory(options[0]);
+      }
+    } else if (event.key === 'Escape') {
+      this.isCategoryOpen = false;
+    }
+  }
+
+  private scrollToCategoryOption(): void {
+    if (!this.categoryOptions?.nativeElement) return;
+    const options = this.categoryOptions.nativeElement.querySelectorAll('.select-option');
+    if (options[this.highlightedCategoryIndex]) {
+      options[this.highlightedCategoryIndex].scrollIntoView({ block: 'nearest' });
+    }
   }
 
   get filteredCategories(): string[] {
@@ -365,5 +409,13 @@ export class EventsListComponent implements OnInit {
     
     const sorted = [...channels].sort((a, b) => a.priority - b.priority);
     return sorted[0];
+  }
+
+  @HostListener('document:click', ['$event'])
+  onDocumentClick(event: MouseEvent): void {
+    const target = event.target as HTMLElement;
+    if (!target.closest('.searchable-select')) {
+      this.isCategoryOpen = false;
+    }
   }
 }

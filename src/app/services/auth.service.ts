@@ -3,6 +3,7 @@ import { HttpClient } from '@angular/common/http';
 import { BehaviorSubject, Observable, of, throwError } from 'rxjs';
 import { catchError, tap } from 'rxjs/operators';
 import { environment } from '../../environments/environment';
+import { FiltersStateService } from './filters-state.service';
 
 export interface LoginResponse {
   access_token: string;
@@ -25,6 +26,7 @@ export interface User {
 })
 export class AuthService {
   private http = inject(HttpClient);
+  private filtersState = inject(FiltersStateService);
   private apiUrl = environment.iptvApiUrl.replace(/\/+$/, '');
 
   private currentUserSubject = new BehaviorSubject<User | null>(null);
@@ -142,6 +144,8 @@ export class AuthService {
     localStorage.removeItem('iptv_user');
     localStorage.removeItem('iptv_username');
     localStorage.removeItem('iptv_password');
+
+    this.filtersState.clearFilters();
 
     this.tokenSubject.next(null);
     this.currentUserSubject.next(null);

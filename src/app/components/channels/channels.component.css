@@ -930,6 +930,11 @@
   color: var(--text-primary);
 }
 
+.select-option.highlighted {
+  background: rgba(90, 103, 216, 0.2);
+  outline: 1px solid rgba(90, 103, 216, 0.5);
+}
+
 .select-option.empty {
   color: var(--text-muted);
   font-style: italic;

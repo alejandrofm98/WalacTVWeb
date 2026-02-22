@@ -27,39 +27,36 @@
         </div>
 
         <div class="filters-row">
-          <div class="search-box">
-            <div class="input-glow"></div>
-            <input type="text" [(ngModel)]="searchQuery" placeholder="Buscar evento o equipo..." class="search-input" />
-            <span class="search-icon">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
-            </span>
-          </div>
+          <input type="text" [(ngModel)]="searchQuery" placeholder="Buscar evento o equipo..." class="search-input" />
 
           <div class="searchable-select" *ngIf="categories.length > 0" [class.open]="isCategoryOpen">
             <div class="select-trigger" (click)="toggleCategory()">
               <span class="select-value">{{ selectedCategory || 'Todos los deportes' }}</span>
-              <svg class="select-arrow" [class.open]="isCategoryOpen" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/>
+              <svg class="select-arrow" [class.open]="isCategoryOpen" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
               </svg>
             </div>
             <div class="select-dropdown" *ngIf="isCategoryOpen">
               <input
+                #categorySearchInput
                 type="text"
                 class="select-search"
                 placeholder="Buscar deporte..."
                 [(ngModel)]="categorySearch"
                 (click)="$event.stopPropagation()"
+                (input)="$event.stopPropagation(); highlightedCategoryIndex = -1"
+                (keydown)="onCategoryKeydown($event)"
               />
-              <div class="select-options">
-                <div class="select-option" [class.selected]="!selectedCategory" (click)="selectCategory('')">Todos los deportes</div>
-                <div class="select-option" *ngFor="let cat of filteredCategories" [class.selected]="selectedCategory === cat" (click)="selectCategory(cat)">{{ cat }}</div>
+              <div class="select-options" #categoryOptions>
+                <div class="select-option" [class.selected]="!selectedCategory" [class.highlighted]="highlightedCategoryIndex === 0" (click)="selectCategory('')">Todos los deportes</div>
+                <div class="select-option" *ngFor="let cat of filteredCategories; let i = index" [class.selected]="selectedCategory === cat" [class.highlighted]="highlightedCategoryIndex === i + 1" (click)="selectCategory(cat)">{{ cat }}</div>
                 <div class="select-option empty" *ngIf="filteredCategories.length === 0">No se encontraron deportes</div>
               </div>
             </div>
           </div>
 
-          <button *ngIf="searchQuery || selectedCategory" class="clear-btn" (click)="clearFilters()">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 6L6 18M6 6l12 12"/></svg>
+          <button *ngIf="searchQuery || selectedCategory" (click)="clearFilters()" class="clear-btn">
+            Limpiar filtros
           </button>
         </div>
       </div>
