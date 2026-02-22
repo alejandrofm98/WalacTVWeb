@@ -239,54 +239,64 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
       const savedItem = this.playerState.getCurrentItem();
       const savedEventTitle = this.playerState.getEventTitle();
       const savedEventChannels = this.playerState.getEventChannels();
+      const savedSelectedChannelId = this.playerState.getSelectedChannelId();
 
-      // Check if it's an event FIRST
-      if (savedEventTitle && savedEventChannels.length > 0 && slugify(savedEventTitle) === slug) {
-        this.eventChannels = savedEventChannels;
-        this.eventTitle = savedEventTitle;
-        this.updateQualitySelectors();
+      console.log('Recuperando estado:', {
+        slug,
+        savedEventTitle,
+        channelsCount: savedEventChannels.length,
+        selectedChannelId: savedSelectedChannelId
+      });
+
+      if (savedEventTitle && savedEventChannels.length > 0) {
+        const savedSlug = slugify(savedEventTitle);
+        const isEventMatch = savedSlug === slug || slug.includes(savedSlug) || savedSlug.includes(slug);
         
-        // Find the initially requested channel based on selectedChannelId
-        let initialChannel: ChannelResolved | undefined;
-        const selectedChannelId = this.playerState.getSelectedChannelId();
-        if (selectedChannelId) {
-          initialChannel = this.eventChannels.find(
-            c => String(c.channel_id) === String(selectedChannelId)
-          );
-        }
+        if (isEventMatch) {
+          console.log('Recuperando evento guardado:', savedEventTitle);
+          this.eventChannels = savedEventChannels;
+          this.eventTitle = savedEventTitle;
+          this.updateQualitySelectors();
+          
+          let initialChannel: ChannelResolved | undefined;
+          
+          if (savedSelectedChannelId) {
+            initialChannel = this.eventChannels.find(
+              c => String(c.channel_id) === String(savedSelectedChannelId)
+            );
+            console.log('Buscando canal por selectedChannelId:', savedSelectedChannelId, '-> encontrado:', !!initialChannel);
+          }
 
-        if (!initialChannel && savedItem && savedItem.id) {
-          initialChannel = this.eventChannels.find(
-            c => String(c.channel_id) === String(savedItem.id)
-          );
-        }
+          if (!initialChannel && savedItem && savedItem.id) {
+            initialChannel = this.eventChannels.find(
+              c => String(c.channel_id) === String(savedItem.id)
+            );
+          }
 
-        if (!initialChannel) {
-          const priorityZero = this.eventChannels.find(c => c.priority === 0);
-          initialChannel = priorityZero || this.eventChannels[0];
-        }
+          if (!initialChannel) {
+            const priorityZero = this.eventChannels.find(c => c.priority === 0);
+            initialChannel = priorityZero || this.eventChannels[0];
+          }
 
-        this.selectedEventChannel = initialChannel;
-        this.showQualitySelector = true;
+          if (initialChannel) {
+            this.selectedEventChannel = initialChannel;
+            this.showQualitySelector = true;
 
-        if (this.selectedEventChannel) {
-          this.dataService.getChannel(this.selectedEventChannel.channel_id).subscribe({
-            next: (iptvChannel) => {
-              if (iptvChannel) {
-                this.currentItem = iptvChannel;
-                this.isChannelMode = true;
-                this.eventTitle = savedEventTitle;
-                // DO NOT call setChannel here because it would clear the event state!
-                // We just want to play the stream.
-                this.loadStreamFromItem();
+            this.dataService.getChannel(initialChannel.channel_id).subscribe({
+              next: (iptvChannel) => {
+                if (iptvChannel) {
+                  this.currentItem = iptvChannel;
+                  this.isChannelMode = true;
+                  this.eventTitle = savedEventTitle;
+                  this.loadStreamFromItem();
+                }
               }
-            }
-          });
-          return;
+            });
+            return;
+          }
         }
       }
 
-      // If we reach here, it's NOT an event. Clear event UI state.
       this.eventChannels = [];
       this.eventTitle = '';
       this.selectedEventChannel = null;
@@ -770,9 +780,9 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
 
   selectQuality(channel: ChannelResolved): void {
     this.selectedEventChannel = channel;
+    this.playerState.setSelectedChannelId(channel.channel_id);
     this.showQualitySelector = true;
     
-    // Resetear contadores de error/reintentos al cambiar calidad
     this.retryCount = 0;
     this.hasError = false;
     this.errorMessage = '';
@@ -793,6 +803,8 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
       console.error('No hay credenciales guardadas');
       return;
     }
+
+    this.playerState.setSelectedChannelId(channel.channel_id);
 
     this.dataService.getChannel(channel.channel_id).subscribe({
       next: (iptvChannel) => {

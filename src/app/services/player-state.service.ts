@@ -17,11 +17,13 @@ export interface PlayerState {
   selectedChannelId: string;
 }
 
+const PLAYER_STATE_KEY = 'walactv_player_state';
+const EVENT_STATE_KEY = 'walactv_event_state';
+
 @Injectable({
   providedIn: 'root'
 })
 export class PlayerStateService {
-  private readonly STORAGE_KEY = 'walactv_player_state';
   private state: PlayerState = {
     channel: null,
     movie: null,
@@ -110,31 +112,31 @@ export class PlayerStateService {
 
   setEventChannels(channels: ChannelResolved[]): void {
     this.state.eventChannels = channels;
-    this.saveState();
+    this.saveEventState();
   }
 
   getEventChannels(): ChannelResolved[] {
-    this.loadState();
+    this.loadEventState();
     return this.state.eventChannels;
   }
 
   setEventTitle(title: string): void {
     this.state.eventTitle = title;
-    this.saveState();
+    this.saveEventState();
   }
 
   getEventTitle(): string {
-    this.loadState();
+    this.loadEventState();
     return this.state.eventTitle;
   }
 
   setSelectedChannelId(channelId: string): void {
     this.state.selectedChannelId = channelId;
-    this.saveState();
+    this.saveEventState();
   }
 
   getSelectedChannelId(): string {
-    this.loadState();
+    this.loadEventState();
     return this.state.selectedChannelId || '';
   }
 
@@ -142,7 +144,7 @@ export class PlayerStateService {
     this.state.eventTitle = '';
     this.state.eventChannels = [];
     this.state.selectedChannelId = '';
-    this.saveState();
+    this.removeEventState();
   }
 
   clear(): void {
@@ -157,29 +159,71 @@ export class PlayerStateService {
       eventTitle: '',
       selectedChannelId: ''
     };
-    this.removeState();
+    localStorage.removeItem(PLAYER_STATE_KEY);
+    localStorage.removeItem(EVENT_STATE_KEY);
   }
 
   private saveState(): void {
     try {
-      localStorage.setItem(this.STORAGE_KEY, JSON.stringify(this.state));
+      const stateToSave = {
+        channel: this.state.channel,
+        movie: this.state.movie,
+        series: this.state.series,
+        contentType: this.state.contentType,
+        volume: this.state.volume,
+        isMuted: this.state.isMuted
+      };
+      localStorage.setItem(PLAYER_STATE_KEY, JSON.stringify(stateToSave));
     } catch (e) {
       console.error('Error saving player state:', e);
     }
   }
 
+  private saveEventState(): void {
+    try {
+      const eventState = {
+        eventChannels: this.state.eventChannels,
+        eventTitle: this.state.eventTitle,
+        selectedChannelId: this.state.selectedChannelId
+      };
+      localStorage.setItem(EVENT_STATE_KEY, JSON.stringify(eventState));
+    } catch (e) {
+      console.error('Error saving event state:', e);
+    }
+  }
+
   private loadState(): void {
     try {
-      const stored = localStorage.getItem(this.STORAGE_KEY);
+      const stored = localStorage.getItem(PLAYER_STATE_KEY);
       if (stored) {
-        this.state = JSON.parse(stored);
+        const parsed = JSON.parse(stored);
+        this.state.channel = parsed.channel || null;
+        this.state.movie = parsed.movie || null;
+        this.state.series = parsed.series || null;
+        this.state.contentType = parsed.contentType || 'channels';
+        this.state.volume = parsed.volume ?? 1;
+        this.state.isMuted = parsed.isMuted ?? false;
       }
     } catch (e) {
       console.error('Error loading player state:', e);
     }
   }
 
-  private removeState(): void {
-    localStorage.removeItem(this.STORAGE_KEY);
+  private loadEventState(): void {
+    try {
+      const stored = localStorage.getItem(EVENT_STATE_KEY);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        this.state.eventChannels = parsed.eventChannels || [];
+        this.state.eventTitle = parsed.eventTitle || '';
+        this.state.selectedChannelId = parsed.selectedChannelId || '';
+      }
+    } catch (e) {
+      console.error('Error loading event state:', e);
+    }
+  }
+
+  private removeEventState(): void {
+    localStorage.removeItem(EVENT_STATE_KEY);
   }
 }
