@@ -1310,17 +1310,25 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
 
     const hlsConfig: Record<string, unknown> = {
       enableWorker: true,
-      lowLatencyMode: isLiveContent,
-      backBufferLength: isLiveContent ? 90 : 30,
-      maxBufferLength: isLiveContent ? 30 : 60,
-      maxMaxBufferLength: isLiveContent ? 60 : 120,
-      manifestLoadingMaxRetry: 2,
-      levelLoadingMaxRetry: 2,
-      fragLoadingMaxRetry: 2,
-      manifestLoadingRetryDelay: 1000,
-      levelLoadingRetryDelay: 1000,
-      fragLoadingRetryDelay: 1000,
-      fragLoadingMaxRetryTimeout: 5000
+      lowLatencyMode: false,
+      backBufferLength: isLiveContent ? 30 : 60,
+      maxBufferLength: isLiveContent ? 60 : 120,
+      maxMaxBufferLength: isLiveContent ? 120 : 300,
+      maxBufferSize: 120 * 1000 * 1000,
+      maxBufferHole: 0.5,
+      highBufferWatchdogPeriod: 2,
+      manifestLoadingMaxRetry: 6,
+      levelLoadingMaxRetry: 6,
+      fragLoadingMaxRetry: 6,
+      manifestLoadingRetryDelay: 2000,
+      levelLoadingRetryDelay: 2000,
+      fragLoadingRetryDelay: 2000,
+      fragLoadingMaxRetryTimeout: 20000,
+      startLevel: -1,
+      capLevelToPlayerSize: true,
+      abrEwmaDefaultEstimate: 500000,
+      abrBandWidthFactor: 0.7,
+      abrBandWidthUpFactor: 0.1
     };
 
     this.hlsPlayer = new Hls(hlsConfig);
