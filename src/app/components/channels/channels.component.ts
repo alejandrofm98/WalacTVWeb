@@ -195,6 +195,7 @@ export class ChannelsComponent implements OnInit, AfterViewInit {
   }
 
   onChannelClick(channel: IptvChannel) {
+    this.playerState.clearEvent();
     this.playerState.setChannel(channel);
     this.router.navigate(['/player', slugify(channel.nombre)]);
   }

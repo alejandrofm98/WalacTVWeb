@@ -14,6 +14,7 @@ export interface PlayerState {
   isMuted: boolean;
   eventChannels: ChannelResolved[];
   eventTitle: string;
+  selectedChannelId: string;
 }
 
 @Injectable({
@@ -29,7 +30,8 @@ export class PlayerStateService {
     volume: 1,
     isMuted: false,
     eventChannels: [],
-    eventTitle: ''
+    eventTitle: '',
+    selectedChannelId: ''
   };
 
   setChannel(channel: IptvChannel): void {
@@ -126,6 +128,23 @@ export class PlayerStateService {
     return this.state.eventTitle;
   }
 
+  setSelectedChannelId(channelId: string): void {
+    this.state.selectedChannelId = channelId;
+    this.saveState();
+  }
+
+  getSelectedChannelId(): string {
+    this.loadState();
+    return this.state.selectedChannelId || '';
+  }
+
+  clearEvent(): void {
+    this.state.eventTitle = '';
+    this.state.eventChannels = [];
+    this.state.selectedChannelId = '';
+    this.saveState();
+  }
+
   clear(): void {
     this.state = {
       channel: null,
@@ -135,7 +154,8 @@ export class PlayerStateService {
       volume: 1,
       isMuted: false,
       eventChannels: [],
-      eventTitle: ''
+      eventTitle: '',
+      selectedChannelId: ''
     };
     this.removeState();
   }

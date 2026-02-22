@@ -26,9 +26,6 @@
             ],
             "styles": [
               "src/styles.css"
-            ],
-            "allowedCommonJsDependencies": [
-              "mpegts.js/dist/mpegts.js"
             ]
           },
           "configurations": {

@@ -19,8 +19,6 @@ import {NavbarComponent} from '../../shared/components/navbar-component/navbar.c
 import {ChannelResolved} from '../../models/calendar.model';
 
 
-declare const mpegts: any;
-
 interface StreamSource {
   name: string;
   url: string;
@@ -43,9 +41,7 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
   streamUrl: string = '';
   eventTitle: string = 'Reproducción en vivo';
 
-  private player: any;
   private hlsPlayer: any;
-  private videoJsPlayer: any;
   private shouldInitializePlayer = false;
   private dataService = inject(DataService);
   private playerState = inject(PlayerStateService);
@@ -76,8 +72,15 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
 
   // Quality switching for events
   eventChannels: ChannelResolved[] = [];
+  eventChannelGroupsList: { displayName: string; channels: ChannelResolved[] }[] = [];
+  qualityOptionsList: { label: string; quality: string; channel: ChannelResolved }[] = [];
   selectedEventChannel: ChannelResolved | null = null;
   showQualitySelector = false;
+
+  // Channel navigation state
+  isLoadingChannel = false;
+  previousChannelInfo = '';
+  nextChannelInfo = '';
 
   private touchStartX = 0;
   private touchStartY = 0;
@@ -116,6 +119,7 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
   // Estado de error - NUNCA oculta el video, solo muestra overlay
   hasError = false;
   errorMessage = '';
+  isStreamLoading = false;
   private currentExtension = '';
 
   constructor(private route: ActivatedRoute) {
@@ -227,14 +231,6 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
 
   ngOnInit() {
     this.contentType = this.playerState.getContentType();
-    this.eventChannels = this.playerState.getEventChannels();
-    this.eventTitle = this.playerState.getEventTitle() || 'Reproducción en vivo';
-    
-    if (this.eventChannels.length > 0) {
-      const priorityZero = this.eventChannels.find(c => c.priority === 0);
-      this.selectedEventChannel = priorityZero || this.eventChannels[0];
-      this.showQualitySelector = true;
-    }
 
     this.route.paramMap.subscribe(async params => {
       const slug = params.get('title');
@@ -242,27 +238,64 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
 
       const savedItem = this.playerState.getCurrentItem();
       const savedEventTitle = this.playerState.getEventTitle();
+      const savedEventChannels = this.playerState.getEventChannels();
 
-      if (savedItem && slugify(savedItem.nombre) === slug) {
-        await this.setCurrentItem(savedItem);
-        return;
-      }
+      // Check if it's an event FIRST
+      if (savedEventTitle && savedEventChannels.length > 0 && slugify(savedEventTitle) === slug) {
+        this.eventChannels = savedEventChannels;
+        this.eventTitle = savedEventTitle;
+        this.updateQualitySelectors();
+        
+        // Find the initially requested channel based on selectedChannelId
+        let initialChannel: ChannelResolved | undefined;
+        const selectedChannelId = this.playerState.getSelectedChannelId();
+        if (selectedChannelId) {
+          initialChannel = this.eventChannels.find(
+            c => String(c.channel_id) === String(selectedChannelId)
+          );
+        }
 
-      if (savedEventTitle && slugify(savedEventTitle) === slug) {
-        if (this.eventChannels.length > 0 && this.selectedEventChannel) {
+        if (!initialChannel && savedItem && savedItem.id) {
+          initialChannel = this.eventChannels.find(
+            c => String(c.channel_id) === String(savedItem.id)
+          );
+        }
+
+        if (!initialChannel) {
+          const priorityZero = this.eventChannels.find(c => c.priority === 0);
+          initialChannel = priorityZero || this.eventChannels[0];
+        }
+
+        this.selectedEventChannel = initialChannel;
+        this.showQualitySelector = true;
+
+        if (this.selectedEventChannel) {
           this.dataService.getChannel(this.selectedEventChannel.channel_id).subscribe({
             next: (iptvChannel) => {
               if (iptvChannel) {
                 this.currentItem = iptvChannel;
                 this.isChannelMode = true;
                 this.eventTitle = savedEventTitle;
-                this.playerState.setChannel(iptvChannel);
+                // DO NOT call setChannel here because it would clear the event state!
+                // We just want to play the stream.
                 this.loadStreamFromItem();
               }
             }
           });
           return;
         }
+      }
+
+      // If we reach here, it's NOT an event. Clear event UI state.
+      this.eventChannels = [];
+      this.eventTitle = '';
+      this.selectedEventChannel = null;
+      this.showQualitySelector = false;
+      this.updateQualitySelectors();
+
+      if (savedItem && slugify(savedItem.nombre) === slug) {
+        await this.setCurrentItem(savedItem);
+        return;
       }
 
       await this.findItemBySlug(slug);
@@ -317,6 +350,7 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
 
     if (this.itemsLoaded) {
       this.updateCurrentItemIndex();
+      this.updateChannelInfo();
     }
   }
 
@@ -439,63 +473,104 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
   async nextItem(): Promise<void> {
     if (this.allItems.length === 0 || !this.currentItem || this.isMovieContent) return;
 
-    const currentNum = this.currentItem.num || 0;
-    const targetNum = currentNum + 1;
+    this.isLoadingChannel = true;
+    this.updateChannelInfo();
 
-    let nextItem = this.allItems.find(i => i.num === targetNum);
+    try {
+      const currentNum = this.currentItem.num || 0;
+      const targetNum = currentNum + 1;
 
-    const maxLoadedNum = Math.max(...this.allItems.map(i => i.num || 0));
-    const remainingItems = maxLoadedNum - currentNum;
+      let nextItem = this.allItems.find(i => i.num === targetNum);
 
-    if (!nextItem && remainingItems < this.PRELOAD_THRESHOLD) {
-      await this.loadMoreItemsIfNeeded('next');
-      nextItem = this.allItems.find(i => i.num === targetNum);
-    }
+      const maxLoadedNum = Math.max(...this.allItems.map(i => i.num || 0));
+      const remainingItems = maxLoadedNum - currentNum;
 
-    if (!nextItem) {
-      const candidates = this.allItems.filter(i => (i.num || 0) > currentNum);
-      if (candidates.length > 0) {
-        nextItem = candidates.sort((a, b) => (a.num || 0) - (b.num || 0))[0];
+      if (!nextItem && remainingItems < this.PRELOAD_THRESHOLD) {
+        await this.loadMoreItemsIfNeeded('next');
+        nextItem = this.allItems.find(i => i.num === targetNum);
       }
-    }
 
-    if (nextItem) {
-      this.navigateToItem(nextItem);
-    } else if (this.allItems.length > 0) {
-      const firstItem = this.allItems.sort((a, b) => (a.num || 0) - (b.num || 0))[0];
-      this.navigateToItem(firstItem);
+      if (!nextItem) {
+        const candidates = this.allItems.filter(i => (i.num || 0) > currentNum);
+        if (candidates.length > 0) {
+          nextItem = candidates.sort((a, b) => (a.num || 0) - (b.num || 0))[0];
+        }
+      }
+
+      if (nextItem) {
+        this.navigateToItem(nextItem);
+      } else if (this.allItems.length > 0) {
+        const firstItem = this.allItems.sort((a, b) => (a.num || 0) - (b.num || 0))[0];
+        this.navigateToItem(firstItem);
+      } else {
+        this.isLoadingChannel = false;
+        this.cdr.markForCheck();
+      }
+    } catch (e) {
+      console.error('Error navigating to next item:', e);
+      this.isLoadingChannel = false;
+      this.cdr.markForCheck();
     }
   }
 
   async previousItem(): Promise<void> {
     if (this.allItems.length === 0 || !this.currentItem || this.isMovieContent) return;
 
-    const currentNum = this.currentItem.num || 0;
-    const targetNum = currentNum - 1;
+    this.isLoadingChannel = true;
+    this.updateChannelInfo();
 
-    let prevItem = this.allItems.find(i => i.num === targetNum);
+    try {
+      const currentNum = this.currentItem.num || 0;
+      const targetNum = currentNum - 1;
 
-    const minLoadedNum = Math.min(...this.allItems.map(i => i.num || 0));
-    const remainingItems = currentNum - minLoadedNum;
+      let prevItem = this.allItems.find(i => i.num === targetNum);
 
-    if (!prevItem && remainingItems < this.PRELOAD_THRESHOLD) {
-      await this.loadMoreItemsIfNeeded('prev');
-      prevItem = this.allItems.find(i => i.num === targetNum);
-    }
+      const minLoadedNum = Math.min(...this.allItems.map(i => i.num || 0));
+      const remainingItems = currentNum - minLoadedNum;
 
-    if (!prevItem) {
-      const candidates = this.allItems.filter(i => (i.num || 0) < currentNum);
-      if (candidates.length > 0) {
-        prevItem = candidates.sort((a, b) => (b.num || 0) - (a.num || 0))[0];
+      if (!prevItem && remainingItems < this.PRELOAD_THRESHOLD) {
+        await this.loadMoreItemsIfNeeded('prev');
+        prevItem = this.allItems.find(i => i.num === targetNum);
       }
+
+      if (!prevItem) {
+        const candidates = this.allItems.filter(i => (i.num || 0) < currentNum);
+        if (candidates.length > 0) {
+          prevItem = candidates.sort((a, b) => (b.num || 0) - (a.num || 0))[0];
+        }
+      }
+
+      if (prevItem) {
+        this.navigateToItem(prevItem);
+      } else if (this.allItems.length > 0) {
+        const lastItem = this.allItems.sort((a, b) => (b.num || 0) - (a.num || 0))[0];
+        this.navigateToItem(lastItem);
+      } else {
+        this.isLoadingChannel = false;
+        this.cdr.markForCheck();
+      }
+    } catch (e) {
+      console.error('Error navigating to previous item:', e);
+      this.isLoadingChannel = false;
+      this.cdr.markForCheck();
+    }
+  }
+
+  private updateChannelInfo(): void {
+    if (!this.currentItem || this.allItems.length === 0) {
+      this.previousChannelInfo = '';
+      this.nextChannelInfo = '';
+      return;
     }
 
-    if (prevItem) {
-      this.navigateToItem(prevItem);
-    } else if (this.allItems.length > 0) {
-      const lastItem = this.allItems.sort((a, b) => (b.num || 0) - (a.num || 0))[0];
-      this.navigateToItem(lastItem);
-    }
+    const currentNum = this.currentItem.num || 0;
+    const sortedItems = [...this.allItems].sort((a, b) => (a.num || 0) - (b.num || 0));
+
+    const prevItem = [...sortedItems].reverse().find(i => (i.num || 0) < currentNum);
+    const nextItem = sortedItems.find(i => (i.num || 0) > currentNum);
+
+    this.previousChannelInfo = prevItem ? `${prevItem.num} - ${prevItem.nombre}` : '';
+    this.nextChannelInfo = nextItem ? `${nextItem.num} - ${nextItem.nombre}` : '';
   }
 
   private loadMoreItemsIfNeeded(direction: 'next' | 'prev'): Promise<void> {
@@ -570,18 +645,28 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   private navigateToItem(item: ContentItem): void {
-    if (!item) return;
+    if (!item) {
+      this.isLoadingChannel = false;
+      this.cdr.markForCheck();
+      return;
+    }
 
     this.hasError = false;
     this.errorMessage = '';
     this.retryCount = 0;
 
+    // Clear event context when navigating via next/prev
+    this.selectedEventChannel = null;
+    this.eventChannels = [];
+    this.updateQualitySelectors();
+    this.showQualitySelector = false;
+    this.playerState.clearEvent();
+
     this.currentItem = item;
-    const savedEventTitle = this.playerState.getEventTitle();
-    if (!savedEventTitle) {
-      this.eventTitle = item.nombre;
-    }
+    this.eventTitle = item.nombre;
     this.currentItemIndex = this.allItems.findIndex(i => i.id === item.id);
+
+    this.updateChannelInfo();
 
     if (this.contentType === 'channels') {
       this.playerState.setChannel(item as IptvChannel);
@@ -604,6 +689,11 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
     }, 3000);
 
     this.loadStreamFromItem();
+
+    setTimeout(() => {
+      this.isLoadingChannel = false;
+      this.cdr.markForCheck();
+    }, 500);
   }
 
   get hasPreviousItem(): boolean {
@@ -622,8 +712,14 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
     return this.contentType === 'movies' || this.contentType === 'series';
   }
 
-  get qualityOptions(): { label: string; quality: string; channel: ChannelResolved }[] {
-    return this.eventChannels.map(ch => ({
+  updateQualitySelectors(): void {
+    if (!this.eventChannels || this.eventChannels.length === 0) {
+      this.qualityOptionsList = [];
+      this.eventChannelGroupsList = [];
+      return;
+    }
+
+    this.qualityOptionsList = this.eventChannels.map(ch => ({
       label: ch.quality || 'SD',
       quality: ch.quality || 'SD',
       channel: ch
@@ -633,10 +729,6 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
       const orderB = qualityOrder[b.quality as keyof typeof qualityOrder] ?? 3;
       return orderA - orderB;
     });
-  }
-
-  get eventChannelGroups(): { displayName: string; channels: ChannelResolved[] }[] {
-    if (!this.eventChannels || this.eventChannels.length === 0) return [];
 
     const grouped = new Map<string, ChannelResolved[]>();
     
@@ -661,14 +753,32 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
       });
     });
 
-    return groups;
+    this.eventChannelGroupsList = groups;
+  }
+
+  trackByGroupName(index: number, group: { displayName: string }): string {
+    return group.displayName;
+  }
+
+  trackByChannelId(index: number, channel: ChannelResolved): string {
+    return channel.channel_id;
+  }
+
+  trackByStreamUrl(index: number, stream: StreamSource): string {
+    return stream.url;
   }
 
   selectQuality(channel: ChannelResolved): void {
     this.selectedEventChannel = channel;
     this.showQualitySelector = true;
     
-    if (this.currentItem && this.videoElement) {
+    // Resetear contadores de error/reintentos al cambiar calidad
+    this.retryCount = 0;
+    this.hasError = false;
+    this.errorMessage = '';
+    this.isStreamLoading = true;
+    
+    if (this.videoElement) {
       this.reloadStreamWithChannel(channel);
     }
     
@@ -713,6 +823,7 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
 
           this.shouldInitializePlayer = true;
           this.isPlaying = true;
+          this.isStreamLoading = true;
 
           if (this.videoElement) {
             setTimeout(() => this.initializePlayer(true), 0);
@@ -896,6 +1007,7 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
 
             this.shouldInitializePlayer = true;
             this.isPlaying = true;
+            this.isStreamLoading = true;
 
             if (this.videoElement) {
               setTimeout(() => this.initializePlayer(true), 0);
@@ -942,6 +1054,7 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
 
     this.shouldInitializePlayer = true;
     this.isPlaying = true;
+    this.isStreamLoading = true;
 
     if (this.videoElement) {
       setTimeout(() => this.initializePlayer(true), 0);
@@ -1024,17 +1137,9 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   ngOnDestroy() {
-    if (this.player) {
-      this.player.destroy();
-      this.player = null;
-    }
     if (this.hlsPlayer) {
       this.hlsPlayer.destroy();
       this.hlsPlayer = null;
-    }
-    if (this.videoJsPlayer) {
-      this.videoJsPlayer.dispose();
-      this.videoJsPlayer = null;
     }
     if (this.hideControlsTimeout) {
       clearTimeout(this.hideControlsTimeout);
@@ -1092,14 +1197,6 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
       retryCount: this.retryCount
     });
 
-    if (this.player) {
-      try {
-        this.player.destroy();
-      } catch (e) {
-        console.warn('Error destruyendo player MPEG-TS:', e);
-      }
-      this.player = null;
-    }
     if (this.hlsPlayer) {
       try {
         this.hlsPlayer.destroy();
@@ -1107,14 +1204,6 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
         console.warn('Error destruyendo player HLS:', e);
       }
       this.hlsPlayer = null;
-    }
-    if (this.videoJsPlayer) {
-      try {
-        this.videoJsPlayer.dispose();
-      } catch (e) {
-        console.warn('Error destruyendo player Video.js:', e);
-      }
-      this.videoJsPlayer = null;
     }
 
     const savedVolume = this.playerState.getVolume();
@@ -1136,50 +1225,18 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
 
     const checkLibs = () => {
       const Hls = (window as any).Hls;
-      const mpegtsLib = (window as any).mpegts;
-      const videojsLib = (window as any).videojs;
-      return { Hls, mpegts: mpegtsLib, videojs: videojsLib };
+      return { Hls };
     };
 
     const libs = checkLibs();
 
-    // ✅ SOLUCIÓN: Para .mp4 en VOD, intentar primero con HTML5 nativo
-    // Solo usar mpegts.js si el video falla (indica que es MPEG-TS real)
-    
-    if (isVOD && isMP4 && libs.videojs) {
-      console.log('✅ Usando Video.js para VOD .mp4 (soporta tanto MP4 nativo como MPEG-TS)');
-      this.initVideoJsPlayer(video, this.streamUrl, autoplay, savedMuted, savedVolume);
-    }
-    else if (isVOD && isHLS && libs.Hls && libs.Hls.isSupported()) {
-      console.log('✅ Usando HLS.js para VOD .m3u8');
-      this.initHlsPlayer(video, this.streamUrl, autoplay, savedMuted, savedVolume);
-    }
-    else if (isVOD && hasNoExtension && libs.videojs) {
-      console.log('⚠️ Video.js para VOD sin extensión');
-      this.initVideoJsPlayer(video, this.streamUrl, autoplay, savedMuted, savedVolume);
-    }
-    else if (isVOD && (isMKV || isAVI) && libs.videojs) {
-      console.log('📹 Video.js para VOD:', isMKV ? 'MKV' : 'AVI');
-      this.initVideoJsPlayer(video, this.streamUrl, autoplay, savedMuted, savedVolume);
-    }
-    else if (isChannel && !isHLS && !isMP4 && !isMKV && !isAVI && libs.mpegts && libs.mpegts.isSupported()) {
-      console.log('📡 MPEG-TS player para canal');
-      this.initMpegtsPlayer(video, this.streamUrl, autoplay, savedMuted, savedVolume);
-    }
-    else if (isChannel && isHLS && libs.Hls && libs.Hls.isSupported()) {
-      console.log('📡 HLS.js para canal HLS');
+    // HLS.js is now the primary player for everything
+    if (libs.Hls && libs.Hls.isSupported()) {
+      console.log('✅ Usando HLS.js');
       this.initHlsPlayer(video, this.streamUrl, autoplay, savedMuted, savedVolume);
     }
     else if (isHLS && video.canPlayType('application/vnd.apple.mpegurl')) {
       console.log('🍎 HLS nativo del navegador');
-      video.src = this.streamUrl;
-      video.muted = savedMuted;
-      video.volume = savedVolume;
-      video.load();
-      this.playVideo(video, autoplay, savedMuted, savedVolume);
-    }
-    else if (isMP4 || isMKV || isAVI) {
-      console.log('🔧 HTML5 video nativo');
       video.src = this.streamUrl;
       video.muted = savedMuted;
       video.volume = savedVolume;
@@ -1196,6 +1253,43 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
     }
 
     this.setupVideoEventListeners(video);
+  }
+
+  private playVideo(video: HTMLVideoElement, autoplay: boolean, wasMuted: boolean, volume: number): void {
+    if (autoplay) {
+      // Intentar reproducir con la preferencia del usuario (posiblemente desmuteado)
+      video.muted = wasMuted;
+      video.volume = volume;
+      this.isMuted = wasMuted;
+      this.volume = volume;
+
+      const playPromise = video.play();
+      if (playPromise !== undefined) {
+        playPromise.catch(error => {
+          // El error NotAllowedError significa que el navegador bloqueó el autoplay con sonido
+          if (error.name === 'NotAllowedError' && !wasMuted) {
+            console.log('🔇 Autoplay con sonido bloqueado. Reintentando silenciado...');
+            video.muted = true;
+            this.isMuted = true;
+            this.volume = 0;
+            // Opcional: no guardamos esto en el playerState para recordar que el usuario 
+            // realmente lo quería con sonido, solo que el navegador nos forzó.
+            
+            video.play().catch(e => {
+              console.error('❌ Autoplay silenciado también bloqueado:', e);
+              this.isPlaying = false;
+              this.cdr.markForCheck();
+            });
+          } else {
+            console.error('❌ Error al reproducir video:', error);
+            this.isPlaying = false;
+            this.cdr.markForCheck();
+          }
+        });
+      }
+    } else {
+      this.isPlaying = false;
+    }
   }
 
   private initHlsPlayer(video: HTMLVideoElement, url: string, autoplay: boolean, wasMuted: boolean, volume: number): void {
@@ -1248,29 +1342,46 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
         retryCount: this.retryCount
       });
 
-      if (statusCode === 404) {
-        console.error('❌ Error 404: Archivo no encontrado');
-        this.hasError = true;
-        this.errorMessage = 'Contenido no disponible (404)';
-        this.cdr.markForCheck();
-        if (this.hlsPlayer) {
-          this.hlsPlayer.stopLoad();
-        }
-        return;
-      }
+      // Si es un error 400, 401, 403, 404, etc., o error de red (como manifestLoadError)
+      const isRecoverableError = data?.type === Hls.ErrorTypes.NETWORK_ERROR ||
+                                 data?.type === Hls.ErrorTypes.MEDIA_ERROR ||
+                                 (statusCode && statusCode >= 400 && statusCode < 600);
 
-      const isAuthError = statusCode === 511 || (data?.type === 'networkError' && statusCode >= 500);
-
-      if (isAuthError && this.retryCount < this.MAX_RETRIES) {
+      if (isRecoverableError && this.retryCount < this.MAX_RETRIES) {
         this.retryCount++;
-        const delay = 2000 * Math.pow(2, this.retryCount - 1);
-        console.warn(`⚠️ Error ${statusCode} detectado. Reintento ${this.retryCount}/${this.MAX_RETRIES} en ${delay}ms`);
+        const delay = 1500 * Math.pow(1.5, this.retryCount - 1); // Exponential backoff
+        
+        console.warn(`⚠️ Error de red o código ${statusCode || 'desconocido'}. Reintento ${this.retryCount}/${this.MAX_RETRIES} en ${delay}ms`);
 
-        // ✅ Mostrar error PERO mantener video visible
         this.hasError = true;
         this.errorMessage = `Reconectando... (${this.retryCount}/${this.MAX_RETRIES})`;
         this.cdr.markForCheck();
 
+        if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
+          console.log('Intentando recuperar error de media interno...');
+          this.hlsPlayer?.recoverMediaError();
+          return;
+        }
+
+        // Para errores de red, intentamos recargar completamente el stream
+        if (this.retryTimeout) {
+          clearTimeout(this.retryTimeout);
+        }
+
+        this.retryTimeout = window.setTimeout(() => {
+          console.log(`🔄 Reintentando carga del stream HLS (Intento ${this.retryCount})...`);
+          
+          // En lugar de usar startLoad() que a veces falla con streams IPTV,
+          // forzamos la recarga completa del stream.
+          this.reloadStream();
+        }, delay);
+        
+      } else if (this.retryCount >= this.MAX_RETRIES) {
+        console.error('❌ Error fatal definitivo en HLS tras máximos reintentos:', data.type);
+        this.hasError = true;
+        this.errorMessage = `Error de reproducción. Por favor, intenta de nuevo más tarde.`;
+        this.cdr.markForCheck();
+        
         if (this.hlsPlayer) {
           try {
             this.hlsPlayer.destroy();
@@ -1279,419 +1390,20 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
           }
           this.hlsPlayer = null;
         }
-
-        if (this.retryTimeout) {
-          clearTimeout(this.retryTimeout);
-        }
-
-        this.retryTimeout = window.setTimeout(() => {
-          console.log('🔄 Reintentando carga del stream HLS...');
-          this.reloadStream();
-        }, delay);
-      } else if (data.fatal) {
-        console.error('Error fatal en HLS:', data.type);
-        this.hasError = true;
-        this.errorMessage = `Error de reproducción: ${data.type}`;
-        this.cdr.markForCheck();
-
-        switch (data.type) {
-          case Hls.ErrorTypes.NETWORK_ERROR:
-            console.log('Intentando recuperar de error de red...');
-            if (this.hlsPlayer && this.retryCount < this.MAX_RETRIES) {
-              this.retryCount++;
-              const delay = 1000 * Math.pow(2, this.retryCount - 1);
-              this.errorMessage = `Error de red, reintentando... (${this.retryCount}/${this.MAX_RETRIES})`;
-              this.cdr.markForCheck();
-              setTimeout(() => {
-                this.hlsPlayer?.startLoad();
-              }, delay);
-            }
-            break;
-          case Hls.ErrorTypes.MEDIA_ERROR:
-            console.log('Intentando recuperar de error de media...');
-            this.hlsPlayer?.recoverMediaError();
-            break;
-          default:
-            if (this.hlsPlayer) {
-              try {
-                this.hlsPlayer.destroy();
-              } catch (e) {
-                console.warn('Error al destruir HLS player:', e);
-              }
-              this.hlsPlayer = null;
-            }
-            break;
-        }
       }
     });
-  }
-
-  private initVideoJsPlayer(video: HTMLVideoElement, url: string, autoplay: boolean, wasMuted: boolean, volume: number): void {
-    const videojs = (window as any).videojs;
-
-    video.classList.add('video-js', 'vjs-default-skin', 'vjs-big-play-centered');
-
-    let mimeType: string | undefined = undefined;
-    const urlLower = url.toLowerCase();
-
-    if (urlLower.includes('.mp4')) {
-      mimeType = 'video/mp4';
-    } else if (urlLower.includes('.mkv')) {
-      mimeType = 'video/x-matroska';
-    } else if (urlLower.includes('.avi')) {
-      mimeType = 'video/x-msvideo';
-    } else if (urlLower.includes('.m3u8')) {
-      mimeType = 'application/x-mpegURL';
-    }
-
-    console.log('Inicializando Video.js:', {
-      url: url,
-      mimeType: mimeType || 'auto-detect'
-    });
-
-    this.videoJsPlayer = videojs(video, {
-      html5: {
-        nativeAudioTracks: false,
-        nativeVideoTracks: false,
-        vhs: {
-          overrideNative: true
-        }
-      },
-      preload: 'auto',
-      controls: false,
-      autoplay: autoplay,
-      muted: wasMuted,
-      volume: volume,
-      fluid: true,
-      errorDisplay: false,
-      notSupportedMessage: '',
-      suppressNotSupportedError: true,
-      playbackRates: [],
-      inactivityTimeout: 0
-    });
-
-    if (mimeType) {
-      this.videoJsPlayer.src({
-        src: url,
-        type: mimeType
-      });
-    } else {
-      this.videoJsPlayer.src(url);
-    }
-
-    this.videoJsPlayer.on('loadedmetadata', () => {
-      console.log('Video.js metadata loaded');
-      if (this.hasError) {
-        this.hasError = false;
-        this.errorMessage = '';
-        this.retryCount = 0;
-        this.cdr.markForCheck();
-      }
-    });
-
-    this.videoJsPlayer.on('canplay', () => {
-      console.log('Video.js canplay event');
-      if (this.hasError) {
-        this.hasError = false;
-        this.errorMessage = '';
-        this.retryCount = 0;
-        this.cdr.markForCheck();
-      }
-    });
-
-    this.videoJsPlayer.on('error', () => {
-      const error = this.videoJsPlayer.error();
-      console.error('Video.js error:', {
-        code: error?.code,
-        message: error?.message
-      });
-
-      // ✅ Fallback: Si es error de formato no soportado, intentar con mpegts.js
-      if (error?.code === 4 && this.streamUrl.toLowerCase().includes('.mp4')) {
-        console.log('⚠️ Video.js no soporta el formato, intentando con mpegts.js...');
-        const mpegtsLib = (window as any).mpegts;
-        if (mpegtsLib && mpegtsLib.isSupported()) {
-          try {
-            this.videoJsPlayer.dispose();
-            this.videoJsPlayer = null;
-          } catch (e) {
-            console.warn('Error disposing Video.js:', e);
-          }
-          this.initMpegtsVodPlayer(video, this.streamUrl, autoplay, wasMuted, volume);
-          return;
-        }
-      }
-      
-      // ✅ Intento de recuperación con otra extensión si Video.js falla
-      if ((error?.code === 4 || error?.code === 3) && this.tryNextExtension()) {
-        console.warn(`🔄 Video.js Error ${error?.code}, intentando con extensión: ${this.currentExtension}`);
-        this.reloadStream();
-        return;
-      }
-
-      this.hasError = true;
-      this.errorMessage = `Error de reproducción: ${error?.message || 'Error desconocido'}`;
-
-      if (error?.code === 2 && this.retryCount < this.MAX_RETRIES) {
-        this.retryCount++;
-        this.errorMessage = `Error de red, reintentando... (${this.retryCount}/${this.MAX_RETRIES})`;
-        this.cdr.markForCheck();
-
-        if (this.retryTimeout) {
-          clearTimeout(this.retryTimeout);
-        }
-
-        this.retryTimeout = window.setTimeout(() => {
-          console.log('🔄 Reintentando carga del stream Video.js...');
-          this.reloadStream();
-        }, 2000 * this.retryCount);
-      } else {
-        this.cdr.markForCheck();
-      }
-    });
-
-    this.videoJsPlayer.load();
-
-    if (autoplay) {
-      this.videoJsPlayer.play().catch((err: any) => {
-        console.log('Video.js autoplay blocked:', err);
-      });
-    }
-  }
-
-  private initMpegtsPlayer(video: HTMLVideoElement, url: string, autoplay: boolean, wasMuted: boolean, volume: number): void {
-    const mpegts = (window as any).mpegts;
-
-    this.player = mpegts.createPlayer({
-      type: 'mpegts',
-      isLive: true,
-      url: url,
-      enableWorker: true,
-      liveBufferLatencyChasing: true,
-      lazyLoad: false,
-      enableStashBuffer: false,
-      stashInitialSize: 128
-    });
-
-    this.player.on(mpegts.Events.ERROR, (type: any, detail: any) => {
-      console.error('MPEG-TS Error:', {
-        type,
-        detail,
-        retryCount: this.retryCount
-      });
-
-      this.hasError = true;
-      this.errorMessage = `Error MPEG-TS: ${type}`;
-      this.cdr.markForCheck();
-
-      const isAuthError = type === 'NetworkError' || type === 'HttpStatusCodeInvalid';
-
-      if (isAuthError && this.retryCount < this.MAX_RETRIES) {
-        this.retryCount++;
-        console.warn(`⚠️ Error detectado en MPEG-TS. Reintento ${this.retryCount}/${this.MAX_RETRIES}`);
-
-        this.errorMessage = `Reconectando... (${this.retryCount}/${this.MAX_RETRIES})`;
-        this.cdr.markForCheck();
-
-        if (this.player) {
-          try {
-            this.player.destroy();
-          } catch (e) {
-            console.warn('Error al destruir MPEG-TS player:', e);
-          }
-          this.player = null;
-        }
-
-        if (this.retryTimeout) {
-          clearTimeout(this.retryTimeout);
-        }
-
-        this.retryTimeout = window.setTimeout(() => {
-          console.log('🔄 Reintentando carga del stream MPEG-TS...');
-          this.reloadStream();
-        }, 2000);
-      } else if (this.retryCount >= this.MAX_RETRIES) {
-        console.error('❌ Máximo número de reintentos alcanzado');
-        this.errorMessage = 'No se pudo conectar al stream';
-        this.cdr.markForCheck();
-      }
-    });
-
-    this.player.on(mpegts.Events.LOADING_COMPLETE, () => {
-      console.log('MPEG-TS loading complete');
-      if (this.retryCount > 0 || this.hasError) {
-        console.log('✅ Stream MPEG-TS cargado correctamente');
-        this.retryCount = 0;
-        this.hasError = false;
-        this.errorMessage = '';
-        this.cdr.markForCheck();
-      }
-    });
-
-    this.player.attachMediaElement(video);
-    this.player.load();
-    video.volume = volume;
-    video.muted = wasMuted;
-    this.playVideo(video, autoplay, wasMuted, volume);
-  }
-
-  // ✅ Método específico para VOD con MPEG-TS (no es live)
-  private initMpegtsVodPlayer(video: HTMLVideoElement, url: string, autoplay: boolean, wasMuted: boolean, volume: number): void {
-    const mpegts = (window as any).mpegts;
-
-    // Configuración para VOD - NO es live stream
-    // ✅ Configuración optimizada para manejar PTS overlaps y errores de MSE
-    this.player = mpegts.createPlayer({
-      type: 'mpegts',
-      isLive: false, // ✅ CRÍTICO: false para VOD
-      url: url,
-      enableWorker: true,
-      enableStashBuffer: true,
-      stashInitialSize: 384,
-
-      // ✅ CRÍTICO: Configuración para manejar errores de PTS
-      fixAudioTimestampGap: true, // Corregir gaps en timestamps de audio
-      autoCleanupSourceBuffer: true,
-      autoCleanupMaxBackwardDuration: 30,
-      autoCleanupMinBackwardDuration: 15,
-
-      // ✅ Configuración de headers para rango HTTP
-      headers: {},
-      withCredentials: false,
-
-      // ✅ Control de buffer para evitar errores de MSE
-      liveBufferLatencyChasing: false,
-      liveBufferLatencyMaxLatency: 3,
-      liveBufferLatencyMinRemain: 0.5
-    });
-
-    this.player.on(mpegts.Events.ERROR, (type: any, detail: any) => {
-      console.error('MPEG-TS VOD Error:', {
-        type,
-        detail,
-        retryCount: this.retryCount,
-        code: detail?.code,
-        msg: detail?.msg
-      });
-
-      // ✅ CRÍTICO: Ignorar errores de MediaMSEError que son recuperables
-      // Estos errores son causados por PTS overlaps pero no impiden la reproducción
-      if (type === 'MediaError' && detail === 'MediaMSEError') {
-        console.warn('⚠️ MediaMSEError detectado (PTS overlap), ignorando - reproducción continúa');
-        // NO marcar hasError ni detener reproducción
-        // Estos errores son normales con archivos MPEG-TS mal formateados
-        return;
-      }
-
-      this.hasError = true;
-      this.errorMessage = `Error MPEG-TS: ${type}`;
-      this.cdr.markForCheck();
-
-      const isAuthError = type === 'NetworkError' ||
-                          type === 'HttpStatusCodeInvalid' ||
-                          detail === 'HttpStatusCodeInvalid' ||
-                          String(detail).includes('HttpStatusCodeInvalid') ||
-                          String(type).includes('NetworkError');
-
-      // ✅ Manejo de error 404 o formato incorrecto (cambiar extensión)
-      if (type === 'NetworkError' && (detail?.code === 404 || String(detail).includes('404'))) {
-         if (this.tryNextExtension()) {
-           console.warn(`🔄 Error 404 en MPEG-TS, probando extensión: ${this.currentExtension}`);
-           this.reloadStream();
-           return;
-         }
-      }
-
-      if (isAuthError && this.retryCount < this.MAX_RETRIES) {
-        this.retryCount++;
-        console.warn(`⚠️ Error ${detail?.code || 'de red'} detectado en MPEG-TS VOD. Reintento ${this.retryCount}/${this.MAX_RETRIES}`);
-
-        this.errorMessage = `Reconectando... (${this.retryCount}/${this.MAX_RETRIES})`;
-        this.cdr.markForCheck();
-
-        if (this.player) {
-          try {
-            this.player.unload();
-            this.player.detachMediaElement();
-            this.player.destroy();
-          } catch (e) {
-            console.warn('Error al destruir MPEG-TS VOD player:', e);
-          }
-          this.player = null;
-        }
-
-        if (this.retryTimeout) {
-          clearTimeout(this.retryTimeout);
-        }
-
-        this.retryTimeout = window.setTimeout(() => {
-          console.log('🔄 Reintentando carga del stream MPEG-TS VOD...');
-          this.reloadStream();
-        }, 2000);
-      } else if (this.retryCount >= this.MAX_RETRIES) {
-        console.error('❌ Máximo número de reintentos alcanzado');
-        this.errorMessage = 'No se pudo cargar el contenido';
-        this.cdr.markForCheck();
-      }
-    });
-
-    this.player.on(mpegts.Events.LOADING_COMPLETE, () => {
-      console.log('✅ MPEG-TS VOD loading complete');
-      if (this.retryCount > 0 || this.hasError) {
-        console.log('✅ Stream MPEG-TS VOD cargado correctamente');
-        this.retryCount = 0;
-        this.hasError = false;
-        this.errorMessage = '';
-        this.cdr.markForCheck();
-      }
-    });
-
-    this.player.on(mpegts.Events.METADATA_ARRIVED, (metadata: any) => {
-      console.log('📊 MPEG-TS metadata:', metadata);
-    });
-
-    this.player.on(mpegts.Events.MEDIA_INFO, (mediaInfo: any) => {
-      console.log('📹 MPEG-TS media info:', {
-        duration: mediaInfo.duration,
-        hasAudio: mediaInfo.hasAudio,
-        hasVideo: mediaInfo.hasVideo,
-        audioCodec: mediaInfo.audioCodec,
-        videoCodec: mediaInfo.videoCodec
-      });
-    });
-
-    this.player.attachMediaElement(video);
-    this.player.load();
-
-    video.volume = volume;
-    video.muted = wasMuted;
-
-    this.playVideo(video, autoplay, wasMuted, volume);
-  }
-
-  private playVideo(video: HTMLVideoElement, autoplay: boolean, savedMuted: boolean, savedVolume: number): void {
-    video.muted = savedMuted;
-    video.volume = savedVolume;
-
-    const playPromise = video.play();
-
-    if (playPromise !== undefined) {
-      playPromise.then(() => {
-        if (this.hasError) {
-          this.hasError = false;
-          this.errorMessage = '';
-          this.retryCount = 0;
-          this.cdr.markForCheck();
-        }
-      }).catch((error) => {
-        console.log('Reproducción bloqueada:', error);
-      });
-    }
   }
 
   private setupVideoEventListeners(video: HTMLVideoElement): void {
     video.addEventListener('play', () => {
       this.isPlaying = true;
+      this.isStreamLoading = false;
+      this.cdr.markForCheck();
+    });
+
+    video.addEventListener('playing', () => {
+      this.isPlaying = true;
+      this.isStreamLoading = false;
       this.cdr.markForCheck();
     });
 
@@ -1708,9 +1420,12 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
 
     video.addEventListener('waiting', () => {
       console.log('Video en espera...');
+      this.isStreamLoading = true;
+      this.cdr.markForCheck();
     });
 
     video.addEventListener('canplay', () => {
+      this.isStreamLoading = false;
       if (this.retryCount > 0 || this.hasError) {
         console.log('✅ Video canplay, reseteando estado');
         this.retryCount = 0;
@@ -1721,6 +1436,7 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
     });
 
     video.addEventListener('loadeddata', () => {
+      this.isStreamLoading = false;
       if (this.retryCount > 0 || this.hasError) {
         console.log('✅ Video loadeddata, reseteando estado');
         this.retryCount = 0;
@@ -1869,6 +1585,8 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
 
   private reloadStream(): void {
     console.log('🔄 Iniciando recarga de stream...');
+    this.isStreamLoading = true;
+    this.cdr.markForCheck();
 
     if (!this.currentItem) {
       console.error('❌ No hay item actual para recargar');
@@ -1891,15 +1609,6 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
       return;
     }
 
-    if (this.player) {
-      try {
-        this.player.destroy();
-      } catch (e) {
-        console.warn('Error al destruir MPEG-TS player:', e);
-      }
-      this.player = null;
-    }
-
     if (this.hlsPlayer) {
       try {
         this.hlsPlayer.destroy();
@@ -1907,15 +1616,6 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
         console.warn('Error al destruir HLS player:', e);
       }
       this.hlsPlayer = null;
-    }
-
-    if (this.videoJsPlayer) {
-      try {
-        this.videoJsPlayer.dispose();
-      } catch (e) {
-        console.warn('Error al destruir Video.js player:', e);
-      }
-      this.videoJsPlayer = null;
     }
 
     const video = this.videoElement?.nativeElement;
@@ -1936,26 +1636,14 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   togglePlayPause() {
-    if (this.videoJsPlayer) {
-      if (this.videoJsPlayer.paused()) {
-        this.videoJsPlayer.play().catch((err: any) => console.error('Error al reproducir Video.js:', err));
-      } else {
-        this.videoJsPlayer.pause();
-      }
-    } else {
-      const video = this.videoElement.nativeElement;
-      video.paused ? video.play().catch(console.error) : video.pause();
-    }
+    const video = this.videoElement.nativeElement;
+    video.paused ? video.play().catch(console.error) : video.pause();
   }
 
   toggleMute() {
     this.isMuted = !this.isMuted;
     this.playerState.setMuted(this.isMuted);
-    if (this.videoJsPlayer) {
-      this.videoJsPlayer.muted(this.isMuted);
-    } else {
-      this.videoElement.nativeElement.muted = this.isMuted;
-    }
+    this.videoElement.nativeElement.muted = this.isMuted;
   }
 
   setVolume(event: any): void {
@@ -1966,12 +1654,7 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
     const percentage = (newVolume * 100);
     event.target.style.setProperty('--value', percentage + '%');
 
-    if (this.videoJsPlayer) {
-      this.videoJsPlayer.volume(newVolume);
-      this.videoJsPlayer.muted(newVolume === 0);
-      this.isMuted = newVolume === 0;
-      this.playerState.setMuted(this.isMuted);
-    } else if (this.videoElement?.nativeElement) {
+    if (this.videoElement?.nativeElement) {
       this.videoElement.nativeElement.volume = newVolume;
       this.isMuted = newVolume === 0;
       this.playerState.setMuted(this.isMuted);
@@ -2071,6 +1754,7 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
     this.hasError = false;
     this.errorMessage = '';
     this.retryCount = 0;
+    this.isStreamLoading = true;
 
     this.streamUrl = stream.url;
     this.currentOriginalUrl = stream.url;

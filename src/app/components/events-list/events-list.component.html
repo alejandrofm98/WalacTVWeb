@@ -107,14 +107,10 @@
            class="event-card" 
            [style.--sport-color]="getSportColor(event.categoria)">
         
-        <div class="card-header">
-          <div class="sport-icon-container">
-            <div class="sport-icon-glow"></div>
-            <div class="sport-icon" [innerHTML]="getSportIcon(event.categoria) | safeHtml"></div>
-          </div>
-          <div class="header-meta">
-            <span class="competition-badge">{{ event.competicion || 'Evento Especial' }}</span>
-            <span class="category-name">{{ event.categoria }}</span>
+        <div class="card-top-row">
+          <div class="sport-tag">
+            <span class="sport-tag-icon" [innerHTML]="getSportIcon(event.categoria) | safeHtml"></span>
+            <span class="sport-tag-label">{{ event.categoria }}</span>
           </div>
           <div class="time-badge">
             <span class="time">{{ event.hora }}</span>
@@ -123,34 +119,35 @@
 
         <div class="card-body">
           <h3 class="event-teams" [title]="event.equipos">{{ event.equipos }}</h3>
-          
-          <div class="channels-container">
-            <div class="channels-header">
-              <span class="pulse-icon"></span>
-              DIRECTO DISPONIBLE
-            </div>
-            
-            <ng-container *ngIf="getChannelGroups(event.canales_resueltos) as groups">
-              <ng-container *ngIf="groups.length > 0">
-                <div class="channels-list">
-                  <ng-container *ngFor="let group of groups">
-                    <button
-                      *ngIf="group.channels[0]"
-                      class="channel-pill"
-                      [class.priority-zero]="group.channels[0].priority === 0"
-                      (click)="onChannelClick(group.channels[0], event.canales_resueltos, event.equipos)"
-                      [title]="'Sintonizar ' + group.displayName + ' - ' + group.channels[0].quality">
-                      <span class="channel-name">{{ group.displayName }}</span>
-                      <span class="quality-tag" *ngIf="group.channels[0].quality">{{ group.channels[0].quality }}</span>
-                    </button>
-                  </ng-container>
-                </div>
-              </ng-container>
-            </ng-container>
+          <span class="competition-label" *ngIf="event.competicion">{{ event.competicion }}</span>
+        </div>
 
-            <div class="channels-fallback" *ngIf="(!event.canales_resueltos || event.canales_resueltos.length === 0) && event.canales_original && event.canales_original.length > 0">
-              <span class="fallback-text">Vía {{ event.canales_original.join(', ') }}</span>
-            </div>
+        <div class="card-channels">
+          <div class="channels-header">
+            <span class="pulse-icon"></span>
+            DIRECTO
+          </div>
+          
+          <ng-container *ngIf="getChannelGroups(event.canales_resueltos) as groups">
+            <ng-container *ngIf="groups.length > 0">
+              <div class="channels-list">
+                <ng-container *ngFor="let group of groups">
+                  <button
+                    *ngIf="group.channels[0]"
+                    class="channel-pill"
+                    [class.priority-zero]="group.channels[0].priority === 0"
+                    (click)="onChannelClick(group.channels[0], event.canales_resueltos, event.equipos)"
+                    [title]="'Sintonizar ' + group.displayName + ' - ' + group.channels[0].quality">
+                    <span class="channel-name">{{ group.displayName }}</span>
+                    <span class="quality-tag" *ngIf="group.channels[0].quality">{{ group.channels[0].quality }}</span>
+                  </button>
+                </ng-container>
+              </div>
+            </ng-container>
+          </ng-container>
+
+          <div class="channels-fallback" *ngIf="(!event.canales_resueltos || event.canales_resueltos.length === 0) && event.canales_original && event.canales_original.length > 0">
+            <span class="fallback-text">Vía {{ event.canales_original.join(', ') }}</span>
           </div>
         </div>
         

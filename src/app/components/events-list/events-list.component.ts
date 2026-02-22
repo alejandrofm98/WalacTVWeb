@@ -200,8 +200,9 @@ export class EventsListComponent implements OnInit {
 
   onChannelClick(channel: ChannelResolved, groupChannels?: ChannelResolved[], eventTitle?: string): void {
     const channelsToUse = groupChannels || [channel];
-    const priorityZeroChannel = this.getFirstPriorityZeroChannel(channelsToUse);
-    const targetChannel = priorityZeroChannel || channel;
+    // Ya no anulamos el canal seleccionado buscando el de prioridad 0 global.
+    // Usamos el canal que el usuario haya seleccionado (que será el primero del grupo que haya clickado).
+    const targetChannel = channel;
     const eventSlug = eventTitle ? slugify(eventTitle) : '';
     
     this.dataService.getChannel(targetChannel.channel_id).subscribe({
@@ -210,6 +211,7 @@ export class EventsListComponent implements OnInit {
           this.playerState.setChannel(iptvChannel);
           this.playerState.setEventChannels(channelsToUse);
           this.playerState.setEventTitle(eventTitle || '');
+          this.playerState.setSelectedChannelId(targetChannel.channel_id);
           const navigateSlug = eventSlug || slugify(iptvChannel.nombre);
           this.router.navigate(['/player', navigateSlug]);
         } else {
@@ -254,48 +256,77 @@ export class EventsListComponent implements OnInit {
     
     const cat = categoria.toLowerCase();
     
-    // Fútbol - Pelota clásica blanca/negra
+    // Fútbol - Clean soccer ball
     if (cat.includes('fútbol') || cat.includes('futbol') || cat.includes('soccer')) {
-      return `<svg viewBox="0 0 512 512" fill="none"><circle cx="256" cy="256" r="256" fill="#F0F0F0"/><path d="M374.3 189.8L256 103.4L137.7 189.8L183.1 328.6H328.9L374.3 189.8Z" fill="#263238"/><path d="M137.7 189.8L256 103.4V26.2C147.2 38.9 57.6 117.2 28.5 221.7L137.7 189.8Z" fill="#37474F"/><path d="M374.3 189.8L483.5 221.7C454.4 117.2 364.8 38.9 256 26.2V103.4L374.3 189.8Z" fill="#37474F"/><path d="M328.9 328.6L374.3 189.8L483.5 221.7C491.5 249.2 491.5 278.4 483.5 305.8L377.9 398.6L328.9 328.6Z" fill="#37474F"/><path d="M183.1 328.6L134.1 398.6L28.5 305.8C20.5 278.4 20.5 249.2 28.5 221.7L137.7 189.8L183.1 328.6Z" fill="#37474F"/><path d="M328.9 328.6H183.1L134.1 398.6L256 485.8L377.9 398.6L328.9 328.6Z" fill="#37474F"/></svg>`;
+      return `<svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="#cbd5e1" stroke-width="1.5"/><path d="M12 2a10 10 0 0 1 0 20" fill="none"/><polygon points="12,7 14.5,9 13.5,12 10.5,12 9.5,9" fill="#cbd5e1"/><line x1="12" y1="7" x2="12" y2="2" stroke="#cbd5e1" stroke-width="1.2"/><line x1="14.5" y1="9" x2="19" y2="5.5" stroke="#cbd5e1" stroke-width="1.2"/><line x1="13.5" y1="12" x2="18.5" y2="14" stroke="#cbd5e1" stroke-width="1.2"/><line x1="10.5" y1="12" x2="5.5" y2="14" stroke="#cbd5e1" stroke-width="1.2"/><line x1="9.5" y1="9" x2="5" y2="5.5" stroke="#cbd5e1" stroke-width="1.2"/></svg>`;
     }
-    // Baloncesto - Pelota naranja
+    // Baloncesto
     if (cat.includes('baloncesto') || cat.includes('basket') || cat.includes('nba')) {
-      return `<svg viewBox="0 0 512 512" fill="none"><circle cx="256" cy="256" r="256" fill="#FF9800"/><path d="M256 512C397.385 512 512 397.385 512 256C512 114.615 397.385 0 256 0V512Z" fill="#F57C00"/><path d="M256 0V512" stroke="#3E2723" stroke-width="16"/><path d="M0 256H512" stroke="#3E2723" stroke-width="16"/><circle cx="256" cy="256" r="160" stroke="#3E2723" stroke-width="16" fill="none"/><path d="M490 146C420 180 340 180 270 146" stroke="#3E2723" stroke-width="16" fill="none"/><path d="M22 146C92 180 172 180 242 146" stroke="#3E2723" stroke-width="16" fill="none"/><path d="M490 366C420 332 340 332 270 366" stroke="#3E2723" stroke-width="16" fill="none"/><path d="M22 366C92 332 172 332 242 366" stroke="#3E2723" stroke-width="16" fill="none"/></svg>`;
+      return `<svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="#fb923c" stroke-width="1.5"/><path d="M12 2v20" stroke="#fb923c" stroke-width="1.2"/><path d="M2 12h20" stroke="#fb923c" stroke-width="1.2"/><path d="M4.5 4.5c4 3 4 7.5 0 15" stroke="#fb923c" stroke-width="1.2" fill="none"/><path d="M19.5 4.5c-4 3-4 7.5 0 15" stroke="#fb923c" stroke-width="1.2" fill="none"/></svg>`;
     }
-    // Tenis - Pelota verde flúor
-    if (cat.includes('tenis')) {
-      return `<svg viewBox="0 0 512 512" fill="none"><circle cx="256" cy="256" r="256" fill="#CCFF90"/><path d="M120 40C120 40 220 180 220 256C220 332 120 472 120 472" stroke="#F0F4C3" stroke-width="24" stroke-linecap="round"/><path d="M392 40C392 40 292 180 292 256C292 332 392 472 392 472" stroke="#F0F4C3" stroke-width="24" stroke-linecap="round"/></svg>`;
+    // Tenis
+    if (cat.includes('tenis') && !cat.includes('mesa')) {
+      return `<svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="#a3e635" stroke-width="1.5"/><path d="M6 3.5c3 4 3 13 0 17" stroke="#a3e635" stroke-width="1.3" fill="none"/><path d="M18 3.5c-3 4-3 13 0 17" stroke="#a3e635" stroke-width="1.3" fill="none"/></svg>`;
     }
-    // F1/Motor
+    // F1/Motor - Steering wheel
     if (cat.includes('motor') || cat.includes('f1') || cat.includes('formula') || cat.includes('rally') || cat.includes('automovilismo')) {
-      return `<svg viewBox="0 0 512 512" fill="none"><path d="M96 256H48V416H96V256Z" fill="#37474F"/><path d="M464 256H416V416H464V256Z" fill="#37474F"/><path d="M48 304H464V368H48V304Z" fill="#FF5252"/><path d="M144 208L176 112H336L368 208H144Z" fill="#40C4FF"/><path d="M80 304H432L416 208H96L80 304Z" fill="#FF5252"/><circle cx="128" cy="416" r="48" fill="#212121"/><circle cx="384" cy="416" r="48" fill="#212121"/><circle cx="128" cy="416" r="24" fill="#9E9E9E"/><circle cx="384" cy="416" r="24" fill="#9E9E9E"/></svg>`;
+      return `<svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="#f87171" stroke-width="1.5"/><circle cx="12" cy="12" r="3" stroke="#f87171" stroke-width="1.5"/><path d="M12 9V3" stroke="#f87171" stroke-width="1.5" stroke-linecap="round"/><path d="M9.4 13.5L4.2 16.5" stroke="#f87171" stroke-width="1.5" stroke-linecap="round"/><path d="M14.6 13.5L19.8 16.5" stroke="#f87171" stroke-width="1.5" stroke-linecap="round"/></svg>`;
     }
     // Ciclismo
     if (cat.includes('ciclismo')) {
-      return `<svg viewBox="0 0 512 512" fill="none"><circle cx="128" cy="384" r="96" stroke="#424242" stroke-width="32"/><circle cx="384" cy="384" r="96" stroke="#424242" stroke-width="32"/><path d="M128 384L224 160H304L384 384" stroke="#03A9F4" stroke-width="24" stroke-linecap="round" stroke-linejoin="round"/><path d="M224 160L176 112H112" stroke="#03A9F4" stroke-width="24" stroke-linecap="round"/></svg>`;
+      return `<svg viewBox="0 0 24 24" fill="none"><circle cx="7" cy="16" r="4" stroke="#38bdf8" stroke-width="1.5"/><circle cx="17" cy="16" r="4" stroke="#38bdf8" stroke-width="1.5"/><path d="M7 16l4-9h3l3 9" stroke="#38bdf8" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/><path d="M11 7L9 5H7" stroke="#38bdf8" stroke-width="1.5" stroke-linecap="round"/></svg>`;
     }
     // Golf
     if (cat.includes('golf')) {
-      return `<svg viewBox="0 0 512 512" fill="none"><circle cx="256" cy="120" r="80" fill="#F5F5F5"/><path d="M240 200h32v216h-32z" fill="#FFD54F"/><path d="M160 416c0-64 96-96 96-96s96 32 96 96" fill="#8D6E63"/></svg>`;
+      return `<svg viewBox="0 0 24 24" fill="none"><path d="M12 18V4l7 4-7 3" stroke="#4ade80" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/><path d="M8 21c0-2 4-3 4-3s4 1 4 3" stroke="#4ade80" stroke-width="1.5" stroke-linecap="round" fill="none"/></svg>`;
+    }
+    // Pádel
+    if (cat.includes('pádel') || cat.includes('padel')) {
+      return `<svg viewBox="0 0 24 24" fill="none"><ellipse cx="12" cy="9" rx="5" ry="7" stroke="#84cc16" stroke-width="1.5" fill="none"/><circle cx="10" cy="7" r="0.8" fill="#84cc16"/><circle cx="14" cy="7" r="0.8" fill="#84cc16"/><circle cx="12" cy="10" r="0.8" fill="#84cc16"/><circle cx="10" cy="12" r="0.8" fill="#84cc16"/><circle cx="14" cy="12" r="0.8" fill="#84cc16"/><path d="M12 16v5" stroke="#84cc16" stroke-width="1.5" stroke-linecap="round"/></svg>`;
+    }
+    // Balonmano
+    if (cat.includes('balonmano') || cat.includes('handball')) {
+      return `<svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="#c084fc" stroke-width="1.5"/><path d="M7 5c3 5 3 9 0 14" stroke="#c084fc" stroke-width="1.2" fill="none"/><path d="M12 3c1 5 1 11 0 18" stroke="#c084fc" stroke-width="1.2" fill="none"/><path d="M17 5c-3 5-3 9 0 14" stroke="#c084fc" stroke-width="1.2" fill="none"/></svg>`;
+    }
+    // Rugby
+    if (cat.includes('rugby')) {
+      return `<svg viewBox="0 0 24 24" fill="none"><ellipse cx="12" cy="12" rx="9" ry="6" transform="rotate(-30 12 12)" stroke="#f59e0b" stroke-width="1.5" fill="none"/><path d="M7 17L17 7" stroke="#f59e0b" stroke-width="1.2"/><path d="M9.5 12l2-2m1 3l2-2" stroke="#f59e0b" stroke-width="1.2" stroke-linecap="round"/></svg>`;
+    }
+    // Boxeo / MMA
+    if (cat.includes('boxeo') || cat.includes('mma') || cat.includes('ufc')) {
+      return `<svg viewBox="0 0 24 24" fill="none"><path d="M5 13V9a4 4 0 0 1 4-4h1a2 2 0 0 1 2 2v5a3 3 0 0 1-3 3H7a2 2 0 0 1-2-2z" stroke="#ef4444" stroke-width="1.5" fill="none"/><path d="M12 12h2a3 3 0 0 0 3-3V8" stroke="#ef4444" stroke-width="1.5" stroke-linecap="round" fill="none"/><path d="M8 19v2m4-2v2" stroke="#ef4444" stroke-width="1.5" stroke-linecap="round"/></svg>`;
+    }
+    // Natación
+    if (cat.includes('natación') || cat.includes('natacion') || cat.includes('swimming')) {
+      return `<svg viewBox="0 0 24 24" fill="none"><path d="M2 18c1.5-1 3-1 4.5 0s3 1 4.5 0 3-1 4.5 0 3 1 4.5 0" stroke="#06b6d4" stroke-width="1.5" stroke-linecap="round" fill="none"/><path d="M2 14c1.5-1 3-1 4.5 0s3 1 4.5 0 3-1 4.5 0 3 1 4.5 0" stroke="#06b6d4" stroke-width="1.5" stroke-linecap="round" fill="none"/><circle cx="8" cy="8" r="2" stroke="#06b6d4" stroke-width="1.5" fill="none"/><path d="M10 8l4 3" stroke="#06b6d4" stroke-width="1.5" stroke-linecap="round"/></svg>`;
+    }
+    // Hockey
+    if (cat.includes('hockey')) {
+      return `<svg viewBox="0 0 24 24" fill="none"><path d="M4 20L14 4" stroke="#64748b" stroke-width="2" stroke-linecap="round"/><path d="M14 4c2 0 4 1 5 3" stroke="#64748b" stroke-width="2" stroke-linecap="round" fill="none"/><circle cx="17" cy="18" r="2" stroke="#64748b" stroke-width="1.5" fill="none"/></svg>`;
     }
     return this.getIconDefault();
   }
 
   getSportColor(categoria: string | null): string {
-    if (!categoria) return '#6366f1';
+    if (!categoria) return '#8b5cf6';
     const cat = categoria.toLowerCase();
     if (cat.includes('fútbol') || cat.includes('futbol')) return '#cbd5e1';
-    if (cat.includes('baloncesto') || cat.includes('basket')) return '#fb923c';
-    if (cat.includes('tenis')) return '#a3e635';
+    if (cat.includes('baloncesto') || cat.includes('basket') || cat.includes('nba')) return '#fb923c';
+    if (cat.includes('tenis') && !cat.includes('mesa')) return '#a3e635';
     if (cat.includes('motor') || cat.includes('f1') || cat.includes('automovilismo')) return '#f87171';
     if (cat.includes('ciclismo')) return '#38bdf8';
     if (cat.includes('golf')) return '#4ade80';
     if (cat.includes('pádel') || cat.includes('padel')) return '#84cc16';
+    if (cat.includes('balonmano') || cat.includes('handball')) return '#c084fc';
+    if (cat.includes('rugby')) return '#f59e0b';
+    if (cat.includes('boxeo') || cat.includes('mma') || cat.includes('ufc')) return '#ef4444';
+    if (cat.includes('natación') || cat.includes('natacion')) return '#06b6d4';
+    if (cat.includes('hockey')) return '#64748b';
     return '#8b5cf6';
   }
 
   private getIconDefault(): string {
-    return `<svg viewBox="0 0 512 512" fill="none"><circle cx="256" cy="256" r="256" fill="#CFD8DC"/><path d="M160 160L352 352" stroke="#607D8B" stroke-width="48" stroke-linecap="round"/><path d="M352 160L160 352" stroke="#607D8B" stroke-width="48" stroke-linecap="round"/></svg>`;
+    return `<svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="#8b5cf6" stroke-width="1.5"/><path d="M12 8v4l3 2" stroke="#8b5cf6" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
   }
 
   getChannelGroups(channels: ChannelResolved[]): ChannelGroup[] {

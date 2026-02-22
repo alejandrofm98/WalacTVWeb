@@ -111,8 +111,60 @@
   box-shadow: 0 4px 20px rgba(90, 103, 216, 0.5);
 }
 
+/* Tab Info Layout */
+.tab-info {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
 .tab-text {
-  font-weight: 600;
+  font-family: 'Space Grotesk', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-weight: 700;
+  font-size: 15px;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+}
+
+/* Count Badge */
+.count-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(90, 103, 216, 0.12);
+  border: 1px solid rgba(90, 103, 216, 0.25);
+  padding: 6px 14px;
+  border-radius: 20px;
+  transition: all var(--transition-smooth);
+}
+
+.count-badge:hover {
+  background: rgba(90, 103, 216, 0.18);
+  border-color: rgba(90, 103, 216, 0.4);
+}
+
+.count-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent-primary);
+  box-shadow: 0 0 8px rgba(90, 103, 216, 0.6);
+  animation: dotPulse 2s ease-in-out infinite;
+}
+
+@keyframes dotPulse {
+  0%, 100% { opacity: 1; box-shadow: 0 0 8px rgba(90, 103, 216, 0.6); }
+  50% { opacity: 0.6; box-shadow: 0 0 4px rgba(90, 103, 216, 0.3); }
+}
+
+.count-value {
+  font-family: 'Space Grotesk', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--accent-secondary);
+  letter-spacing: 0.5px;
+  line-height: 1;
 }
 
 .tab-button .count {

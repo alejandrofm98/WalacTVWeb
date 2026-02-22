@@ -19,11 +19,38 @@
 
     <video
       #videoElement
-      class="video-element video-js vjs-default-skin"
+      class="video-element"
       playsinline
-      preload="auto"
-      data-setup="{}">
+      preload="auto">
     </video>
+
+    <!-- Stream Loading / Reconnecting HUD -->
+    <div class="stream-hud" [class.visible]="isStreamLoading || hasError">
+      <div class="stream-hud-content">
+        <!-- Spinner only shown when loading and not completely failed -->
+        <div class="hud-spinner" *ngIf="isStreamLoading && !hasError">
+          <svg viewBox="0 0 50 50">
+            <circle class="path" cx="25" cy="25" r="20" fill="none" stroke-width="2"></circle>
+          </svg>
+        </div>
+        
+        <!-- Error / Reconnection Warning Icon -->
+        <div class="hud-warning-icon" *ngIf="hasError">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+          </svg>
+        </div>
+
+        <div class="hud-status-text">
+          <span *ngIf="isStreamLoading && !hasError">ESTABLECIENDO ENLACE...</span>
+          <span *ngIf="hasError && errorMessage" class="hud-error-text">{{ errorMessage }}</span>
+        </div>
+        
+        <div class="hud-progress-bar" *ngIf="isStreamLoading || hasError">
+          <div class="hud-progress-fill" [class.error]="hasError" [class.loading]="isStreamLoading && !hasError"></div>
+        </div>
+      </div>
+    </div>
 
     <div class="channel-overlay" [class.visible]="showChannelOverlay && isFullscreen && !isMovieContent">
       <div class="channel-overlay-content">
@@ -46,21 +73,36 @@
       </div>
     </div>
 
-    <div class="channel-navigation" *ngIf="isChannelMode && !isFullscreen">
+    <!-- Channel Navigation Buttons - Visible when hovering controls -->
+    <div class="channel-nav-buttons" 
+         *ngIf="isChannelMode && !isMovieContent && allItems.length > 1"
+         [class.show-controls]="showControls">
       <button
-        class="nav-arrow nav-arrow-left"
-        (click)="previousItem()"
-        *ngIf="hasPreviousItem"
-        [class.show-controls]="showControls">
-        ◀
+        class="nav-btn nav-btn-prev"
+        (click)="previousItem(); $event.stopPropagation()"
+        [disabled]="isLoadingChannel"
+        [class.loading]="isLoadingChannel">
+        <span class="nav-btn-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <path d="M15 18l-6-6 6-6" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </span>
+        <span class="nav-btn-label">ANTERIOR</span>
+        <span class="nav-btn-channel" *ngIf="previousChannelInfo">{{ previousChannelInfo }}</span>
       </button>
 
       <button
-        class="nav-arrow nav-arrow-right"
-        (click)="nextItem()"
-        *ngIf="hasNextItem"
-        [class.show-controls]="showControls">
-        ▶
+        class="nav-btn nav-btn-next"
+        (click)="nextItem(); $event.stopPropagation()"
+        [disabled]="isLoadingChannel"
+        [class.loading]="isLoadingChannel">
+        <span class="nav-btn-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <path d="M9 18l6-6-6-6" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </span>
+        <span class="nav-btn-label">SIGUIENTE</span>
+        <span class="nav-btn-channel" *ngIf="nextChannelInfo">{{ nextChannelInfo }}</span>
       </button>
     </div>
 
@@ -170,13 +212,13 @@
     </div>
   </div>
 
-  <div class="quality-selector" *ngIf="eventChannelGroups.length > 0">
+  <div class="quality-selector" *ngIf="eventChannelGroupsList.length > 0">
     <div class="channel-groups-display">
-      <div class="channel-group-display" *ngFor="let group of eventChannelGroups">
+      <div class="channel-group-display" *ngFor="let group of eventChannelGroupsList; trackBy: trackByGroupName">
         <div class="channel-group-name">{{ group.displayName }}</div>
         <div class="channel-qualities">
           <button
-            *ngFor="let ch of group.channels"
+            *ngFor="let ch of group.channels; trackBy: trackByChannelId"
             class="quality-option"
             [class.active]="selectedEventChannel?.channel_id === ch.channel_id"
             (click)="selectQuality(ch)">
@@ -188,7 +230,7 @@
   </div>
 
   <div class="channel-options" *ngIf="availableStreams.length > 1">
-    <div class="channel-section" *ngFor="let stream of availableStreams">
+    <div class="channel-section" *ngFor="let stream of availableStreams; trackBy: trackByStreamUrl">
       <h3 class="channel-title">{{ stream.name }}</h3>
       <div class="options-row">
         <button
