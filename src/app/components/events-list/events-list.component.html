@@ -120,9 +120,9 @@
         </div>
 
         <div class="card-channels">
-          <div class="channels-header">
-            <span class="pulse-icon"></span>
-            DIRECTO
+          <div class="channels-header" [class.is-live]="getLiveStatus(event) === 'live'" [class.is-upcoming]="getLiveStatus(event) === 'upcoming'" [class.is-past]="getLiveStatus(event) === 'past'">
+            <span class="status-icon"></span>
+            <span class="status-text">{{ getLiveStatus(event) === 'live' ? 'DIRECTO' : (getLiveStatus(event) === 'upcoming' ? 'PRÓXIMAMENTE' : 'FINALIZADO') }}</span>
           </div>
           
           <ng-container *ngIf="getChannelGroups(event.canales_resueltos) as groups">

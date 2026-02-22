@@ -658,25 +658,56 @@
   font-family: 'JetBrains Mono', monospace;
   font-size: 10px;
   font-weight: 700;
-  color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 1.5px;
   margin-bottom: 12px;
 }
 
-.pulse-icon {
+.status-icon {
   width: 7px;
   height: 7px;
-  background: #22c55e;
   border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.channels-header.is-live .status-icon {
+  background: #22c55e;
   box-shadow: 0 0 8px #22c55e;
   animation: pulseLive 2s infinite;
+}
+
+.channels-header.is-live {
+  color: #22c55e;
+}
+
+.channels-header.is-upcoming .status-icon {
+  background: #f59e0b;
+  box-shadow: 0 0 6px rgba(245, 158, 11, 0.5);
+  animation: pulseUpcoming 3s infinite;
+}
+
+.channels-header.is-upcoming {
+  color: #f59e0b;
+}
+
+.channels-header.is-past .status-icon {
+  background: #64748b;
+  box-shadow: none;
+}
+
+.channels-header.is-past {
+  color: #64748b;
 }
 
 @keyframes pulseLive {
   0% { transform: scale(1); opacity: 1; }
   50% { transform: scale(1.5); opacity: 0.4; }
   100% { transform: scale(1); opacity: 1; }
+}
+
+@keyframes pulseUpcoming {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
 }
 
 .channels-list {

@@ -202,6 +202,37 @@ export class EventsListComponent implements OnInit {
     return this.selectedDate === today;
   }
 
+  isLive(event: CalendarEvent): boolean {
+    if (!this.isToday()) return false;
+    
+    const now = new Date();
+    const [hours, minutes] = event.hora.split(':').map(Number);
+    const eventTime = new Date();
+    eventTime.setHours(hours, minutes, 0, 0);
+    
+    return now >= eventTime;
+  }
+
+  getLiveStatus(event: CalendarEvent): 'live' | 'upcoming' | 'past' {
+    if (!this.isToday()) {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const selected = new Date(this.selectedDate);
+      selected.setHours(0, 0, 0, 0);
+      
+      if (selected < today) return 'past';
+      return 'upcoming';
+    }
+    
+    const now = new Date();
+    const [hours, minutes] = event.hora.split(':').map(Number);
+    const eventTime = new Date();
+    eventTime.setHours(hours, minutes, 0, 0);
+    
+    if (now >= eventTime) return 'live';
+    return 'upcoming';
+  }
+
   onChannelClick(channel: ChannelResolved, groupChannels?: ChannelResolved[], eventTitle?: string): void {
     const channelsToUse = groupChannels || [channel];
     // Ya no anulamos el canal seleccionado buscando el de prioridad 0 global.
