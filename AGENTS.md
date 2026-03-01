@@ -1,137 +1,101 @@
 # AGENTS.md
 
-## Build, Lint, and Test Commands
+## Project Context
+
+- Angular 20 app using standalone components.
+- Main domain: events, channels, video playback, and IPTV admin panel.
+- Routing is split between public pages (`/login`, `/test-player`) and protected pages (`/`, `/channels`, `/player/:title`, `/iptv`).
+
+## Build, Test, and Type-Check Commands
 
 ### Development
+
 ```bash
-npm start                              # Start dev server with proxy
-ng serve --proxy-config proxy.conf.json # Same as npm start
-npm run watch                          # Build in watch mode for development
+npm start                                # Dev server with proxy.conf.json
+ng serve --proxy-config proxy.conf.json # Equivalent to npm start
+npm run watch                            # ng build --watch --configuration development
 ```
 
-### Building
+### Build
+
 ```bash
-npm run build                          # Production build
-ng build                               # Alias for production build
-ng build --configuration=development   # Development build with source maps
+npm run build                            # Production build
+ng build                                 # Same as npm run build
+ng build --configuration=development     # Development build with source maps
 ```
 
-### Testing
+### Tests
+
 ```bash
-npm test                               # Run all tests with Karma
-ng test                                # Run all tests
-ng test --watch=false                  # Run tests once (no watch mode)
-ng test --include='**/app.spec.ts'     # Run single test file
-ng test --browsers=ChromeHeadless      # Run headless for CI
+npm test                                 # Run tests in watch mode
+ng test --watch=false                    # Single-run test execution
+ng test --browsers=ChromeHeadless        # Headless execution
+ng test --include='**/app.spec.ts'       # Run a specific spec pattern
 ```
 
-### TypeScript
+### TypeScript Check
+
 ```bash
-npx tsc                                # Type-check only (no emit)
+npx tsc --noEmit
 ```
+
+## Environment and Proxy Notes
+
+- Development proxy config: `proxy.conf.json`.
+- Environment file: `src/environments/environment.ts`.
+- Key environment values used by services:
+  - `apiWalactv`
+  - `acestreamHost`
+  - `iptvApiUrl`
+  - `adminEmails`
 
 ## Code Style Guidelines
 
-### TypeScript Configuration
-- **Strict mode enabled**: `strict: true` in tsconfig.json
-- **No implicit any**: All functions must have explicit types
-- **No implicit returns**: All code paths must return a value
-- **Modern module syntax**: `module: preserve` (ESNext modules)
-- **Decorators enabled**: `experimentalDecorators: true` for Angular
-- **Target**: ES2022 with isolated modules
+### TypeScript and Angular
 
-### Angular 20 Best Practices
-- Use **standalone components** exclusively (no NgModules)
-- Use **signals** for reactive state: `import { signal } from '@angular/core'`
-- Use `inject()` for dependency injection instead of constructor injection
-- Declare inputs with `@Input()` decorator or signal inputs
-- Use `OnPush` change detection for performance
-- Implement lifecycle interfaces explicitly (`OnInit`, `OnDestroy`, etc.)
+- Keep strict typing (`strict: true`, `noImplicitReturns`, `strictTemplates`).
+- Prefer `inject()` for dependency injection.
+- Use standalone components only (no NgModules).
+- Add explicit return types to public methods and helpers.
+- Avoid `any`; prefer exact models, union types, or `unknown`.
 
-### Naming Conventions
-- **Components/Services/Classes**: PascalCase (`VideoPlayerComponent`, `AuthService`)
-- **Files**: kebab-case for non-class files, PascalCase for class files
-  - Components: `video-player.component.ts`
-  - Services: `data.service.ts`
-  - Utils: `slugify.ts`
-- **Interfaces/Types**: PascalCase, no `I` prefix (`UserProfile` not `IUserProfile`)
-- **Constants**: SCREAMING_SNAKE_CASE
-- **Private members**: prefix with underscore `_privateMethod()`
-- **Boolean properties**: use `is` or `has` prefix (`isLoading`, `hasMore`)
+### Naming and Files
 
-### Imports Organization
-```typescript
-// 1. Angular imports first
-import { Component, inject, OnInit } from '@angular/core';
-import { CommonModule } from '@angular/common';
+- Classes, components, services, interfaces, and types: PascalCase.
+- File names: kebab-case (for example `video-player.component.ts`, `auth.service.ts`).
+- Boolean names: use `is`/`has` prefixes.
+- Constants: SCREAMING_SNAKE_CASE.
 
-// 2. Third-party libraries
-import { Observable } from 'rxjs';
+### Imports Order
 
-// 3. Internal absolute imports (if paths configured)
-import { DataService } from '@app/services/data.service';
+1. Angular imports.
+2. Third-party imports.
+3. Internal imports.
+4. Relative imports.
 
-// 4. Relative imports last
-import { slugify } from '../../utils/slugify';
-import { NavbarComponent } from '../navbar/navbar.component';
-```
+### Formatting
 
-### Formatting (Prettier)
-- **Print width**: 100 characters
-- **Single quotes**: Always use `'` for strings
-- **HTML templates**: Angular parser for template formatting
-- **Trailing commas**: No trailing commas in multi-line objects
+- Prettier config is in `package.json`.
+- `printWidth: 100`.
+- `singleQuote: true`.
+- Angular HTML parser for `*.html` templates.
 
 ### Component Structure
-```typescript
-@Component({
-  selector: 'app-component-name',     // prefix with 'app-'
-  standalone: true,                    // always standalone
-  imports: [CommonModule, ...],        // declare dependencies
-  templateUrl: './component-name.component.html',
-  styleUrls: ['./component-name.component.css']
-})
-export class ComponentNameComponent implements OnInit, OnDestroy {
-  // Public properties first
-  publicProperty = '';
-  
-  // Private properties with underscore
-  private _privateProperty = '';
-  
-  // Inject services
-  private dataService = inject(DataService);
-  
-  // Lifecycle hooks
-  ngOnInit(): void { }
-  ngOnDestroy(): void { }
-}
-```
 
-### Error Handling
-- Use typed errors: `throw new Error('message')`
-- Handle async operations with proper error boundaries
-- Use RxJS `catchError` operator for observables
-- Never expose sensitive data in error messages
-- Log errors with descriptive context
+- Keep components focused and small.
+- Public API/properties at the top, helpers at the bottom.
+- Keep complex business logic in services.
+- Prefer `OnPush` when behavior allows it.
 
-### Type Safety Rules
-- Explicit return types on all functions
-- No `any` types - use `unknown` or proper interfaces
-- Use strict null checks - handle undefined/null explicitly
-- Prefer `const` over `let` - never use `var`
-- Use arrow functions for callbacks
-- Use optional chaining (`?.`) and nullish coalescing (`??`)
+### Error Handling and RxJS
 
-### Code Organization
-- Single responsibility principle - one file per component
-- Keep templates simple - extract complex logic to methods/services
-- Group related methods together
-- Private helper methods at the bottom of the class
-- Constants at the top of the file or in separate constants files
+- Throw typed errors with useful context.
+- Handle async failures with `catchError` where applicable.
+- Do not leak sensitive values in logs or error messages.
 
-### Testing (Jasmine/Karma)
-- Place specs alongside source files (`*.spec.ts`)
-- Use descriptive `describe` and `it` blocks
-- Follow AAA pattern: Arrange, Act, Assert
-- Mock external dependencies with `jasmine.createSpyObj`
-- Test component logic, not Angular framework
+### Testing Guidelines
+
+- Keep specs alongside source files (`*.spec.ts`).
+- Use clear `describe`/`it` names and AAA structure.
+- Mock dependencies via `jasmine.createSpyObj`.
+- Test business logic and component behavior, not framework internals.

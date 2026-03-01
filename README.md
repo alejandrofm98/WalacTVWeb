@@ -1,59 +1,88 @@
-# WalactvWeb
+# Walactv Web
 
-This project was generated using [Angular CLI](https://github.com/angular/angular-cli) version 20.3.1.
+Frontend en Angular 20 para reproducir canales/eventos y gestionar IPTV con autenticacion por roles.
 
-## Development server
+## Requisitos
 
-To start a local development server, run:
+- Node.js 20+
+- npm 10+
 
-```bash
-ng serve
-```
-
-Once the server is running, open your browser and navigate to `http://localhost:4200/`. The application will automatically reload whenever you modify any of the source files.
-
-## Code scaffolding
-
-Angular CLI includes powerful code scaffolding tools. To generate a new component, run:
+## Instalacion
 
 ```bash
-ng generate component component-name
+npm install
 ```
 
-For a complete list of available schematics (such as `components`, `directives`, or `pipes`), run:
+## Configuracion de entorno
+
+La app usa variables en `src/environments/environment.ts`.
+
+Valores usados actualmente:
+
+- `apiWalactv`: proxy para API de Walactv (`/apiwalactv`)
+- `acestreamHost`: proxy para AceStream (`/apiace`)
+- `iptvApiUrl`: URL base de autenticacion/gestion IPTV (por defecto `http://localhost:3010`)
+- `adminEmails`: correos con permisos de administracion
+
+El proyecto incluye `proxy.conf.json` para desarrollo local con `ng serve`/`npm start`.
+
+## Desarrollo
 
 ```bash
-ng generate --help
+npm start
 ```
 
-## Building
-
-To build the project run:
+Alternativas:
 
 ```bash
-ng build
+ng serve --proxy-config proxy.conf.json
+npm run watch
 ```
 
-This will compile your project and store the build artifacts in the `dist/` directory. By default, the production build optimizes your application for performance and speed.
+La app queda disponible en `http://localhost:4200/`.
 
-## Running unit tests
-
-To execute unit tests with the [Karma](https://karma-runner.github.io) test runner, use the following command:
+## Build
 
 ```bash
-ng test
+npm run build
 ```
 
-## Running end-to-end tests
-
-For end-to-end (e2e) testing, run:
+Build de desarrollo:
 
 ```bash
-ng e2e
+ng build --configuration=development
 ```
 
-Angular CLI does not come with an end-to-end testing framework by default. You can choose one that suits your needs.
+## Tests
 
-## Additional Resources
+```bash
+npm test
+```
 
-For more information on using the Angular CLI, including detailed command references, visit the [Angular CLI Overview and Command Reference](https://angular.dev/tools/cli) page.
+Correr tests una sola vez o en headless:
+
+```bash
+ng test --watch=false
+ng test --browsers=ChromeHeadless
+```
+
+## Rutas principales
+
+- `/login`: acceso publico
+- `/`: listado de eventos (protegido)
+- `/channels`: listado de canales (protegido)
+- `/player/:title`: reproductor (protegido)
+- `/iptv`: panel IPTV (protegido y solo admin)
+- `/test-player`: reproductor de prueba
+
+## Stack tecnico
+
+- Angular 20 standalone components
+- RxJS
+- Karma + Jasmine para unit tests
+- HLS.js para reproduccion
+
+## Notas
+
+- No hay framework e2e configurado actualmente.
+- Si cambias endpoints/backend, revisa `proxy.conf.json` y `src/environments/environment.ts`.
