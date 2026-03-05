@@ -115,6 +115,14 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
   private retryCount = 0;
   readonly MAX_RETRIES = 5;
   private retryTimeout?: number;
+  private startupWatchdogTimeout?: number;
+  private playbackWatchdogInterval?: number;
+  private lastObservedPlaybackTime = 0;
+  private noPlaybackProgressSince = 0;
+  private recentFragmentIds: string[] = [];
+  private lastSoftRecoveryAt = 0;
+  private softRecoveryCount = 0;
+  readonly MAX_SOFT_RECOVERIES = 3;
 
   // Estado de error - NUNCA oculta el video, solo muestra overlay
   hasError = false;
@@ -1149,6 +1157,8 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   ngOnDestroy() {
+    this.clearHlsWatchdogs();
+
     if (this.hlsPlayer) {
       this.hlsPlayer.destroy();
       this.hlsPlayer = null;
@@ -1196,7 +1206,118 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
     }
   }
 
-  private initializePlayer(autoplay: boolean) {
+  private clearHlsWatchdogs(): void {
+    if (this.startupWatchdogTimeout) {
+      clearTimeout(this.startupWatchdogTimeout);
+      this.startupWatchdogTimeout = undefined;
+    }
+
+    if (this.playbackWatchdogInterval) {
+      clearInterval(this.playbackWatchdogInterval);
+      this.playbackWatchdogInterval = undefined;
+    }
+
+    this.lastObservedPlaybackTime = 0;
+    this.noPlaybackProgressSince = 0;
+    this.recentFragmentIds = [];
+    this.softRecoveryCount = 0;
+    this.lastSoftRecoveryAt = 0;
+  }
+
+  private triggerSoftLiveRecovery(reason: string, video: HTMLVideoElement): void {
+    if (this.contentType !== 'channels' || !this.hlsPlayer) {
+      return;
+    }
+
+    if (this.softRecoveryCount >= this.MAX_SOFT_RECOVERIES) {
+      return;
+    }
+
+    const now = Date.now();
+    if (now - this.lastSoftRecoveryAt < 5000) {
+      return;
+    }
+
+    this.softRecoveryCount++;
+    this.lastSoftRecoveryAt = now;
+
+    console.warn(
+      `⚠️ Recuperacion suave live (${this.softRecoveryCount}/${this.MAX_SOFT_RECOVERIES}): ${reason}`
+    );
+
+    const liveSyncPosition = this.hlsPlayer.liveSyncPosition;
+    if (typeof liveSyncPosition === 'number' && Number.isFinite(liveSyncPosition)) {
+      try {
+        video.currentTime = liveSyncPosition;
+      } catch (error) {
+        console.warn('No se pudo mover al live edge en recuperacion suave:', error);
+      }
+    }
+
+    try {
+      this.hlsPlayer.startLoad(-1);
+      this.hlsPlayer.recoverMediaError();
+    } catch (error) {
+      console.warn('Error durante recuperacion suave HLS:', error);
+    }
+  }
+
+  private startPlaybackWatchdog(video: HTMLVideoElement): void {
+    if (this.contentType !== 'channels') {
+      return;
+    }
+
+    this.lastObservedPlaybackTime = video.currentTime;
+    this.noPlaybackProgressSince = Date.now();
+
+    this.playbackWatchdogInterval = window.setInterval(() => {
+      if (!this.hlsPlayer || this.isPlaying) {
+        return;
+      }
+
+      const hasProgress = video.currentTime > this.lastObservedPlaybackTime + 0.15;
+      if (hasProgress) {
+        this.lastObservedPlaybackTime = video.currentTime;
+        this.noPlaybackProgressSince = Date.now();
+        return;
+      }
+
+      const stuckForMs = Date.now() - this.noPlaybackProgressSince;
+      if (stuckForMs >= 8000) {
+        this.triggerSoftLiveRecovery('sin progreso de reproduccion por 8s', video);
+        this.noPlaybackProgressSince = Date.now();
+      }
+    }, 1000);
+  }
+
+  private trackLiveFragmentLoop(data: any, video: HTMLVideoElement): void {
+    if (this.contentType !== 'channels') {
+      return;
+    }
+
+    const frag = data?.frag;
+    if (!frag || frag.sn === 'initSegment') {
+      return;
+    }
+
+    const fragId = `${frag.level ?? 'na'}:${frag.sn ?? 'na'}`;
+    this.recentFragmentIds.push(fragId);
+    if (this.recentFragmentIds.length > 8) {
+      this.recentFragmentIds.shift();
+    }
+
+    if (this.recentFragmentIds.length < 6) {
+      return;
+    }
+
+    const uniqueFragments = new Set(this.recentFragmentIds);
+    if (uniqueFragments.size <= 2 && !this.isPlaying) {
+      this.triggerSoftLiveRecovery('bucle de segmentos repetidos detectado', video);
+      this.recentFragmentIds = [];
+    }
+  }
+
+  private initializePlayer(autoplay: boolean): void {
     const video = this.videoElement?.nativeElement;
     if (!video || !this.streamUrl) {
       console.error('Video element or stream URL not available');
@@ -1208,6 +1329,8 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
       contentType: this.contentType,
       retryCount: this.retryCount
     });
+
+    this.clearHlsWatchdogs();
 
     if (this.hlsPlayer) {
       try {
@@ -1278,6 +1401,11 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
       const playPromise = video.play();
       if (playPromise !== undefined) {
         playPromise.catch(error => {
+          if (error.name === 'AbortError') {
+            console.warn('Reproduccion interrumpida por una nueva carga de stream');
+            return;
+          }
+
           // El error NotAllowedError significa que el navegador bloqueó el autoplay con sonido
           if (error.name === 'NotAllowedError' && !wasMuted) {
             console.log('🔇 Autoplay con sonido bloqueado. Reintentando silenciado...');
@@ -1310,19 +1438,27 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
 
     const hlsConfig: Record<string, unknown> = {
       enableWorker: true,
-      lowLatencyMode: false,
-      backBufferLength: isLiveContent ? 30 : 60,
-      maxBufferLength: isLiveContent ? 60 : 120,
-      maxMaxBufferLength: isLiveContent ? 120 : 300,
+      lowLatencyMode: isLiveContent,
+      backBufferLength: isLiveContent ? 10 : 60,
+      maxBufferLength: isLiveContent ? 8 : 120,
+      maxMaxBufferLength: isLiveContent ? 12 : 300,
       maxBufferSize: 120 * 1000 * 1000,
       maxBufferHole: 0.5,
+      liveSyncDurationCount: isLiveContent ? 1 : 3,
+      liveMaxLatencyDurationCount: isLiveContent ? 3 : 10,
+      maxLiveSyncPlaybackRate: isLiveContent ? 1.5 : 1,
+      startFragPrefetch: isLiveContent,
+      testBandwidth: !isLiveContent,
+      liveDurationInfinity: isLiveContent,
+      nudgeOffset: 0.15,
+      nudgeMaxRetry: 3,
       highBufferWatchdogPeriod: 2,
-      manifestLoadingMaxRetry: 6,
-      levelLoadingMaxRetry: 6,
-      fragLoadingMaxRetry: 6,
-      manifestLoadingRetryDelay: 2000,
-      levelLoadingRetryDelay: 2000,
-      fragLoadingRetryDelay: 2000,
+      manifestLoadingMaxRetry: isLiveContent ? 3 : 6,
+      levelLoadingMaxRetry: isLiveContent ? 3 : 6,
+      fragLoadingMaxRetry: isLiveContent ? 2 : 6,
+      manifestLoadingRetryDelay: isLiveContent ? 1200 : 2000,
+      levelLoadingRetryDelay: isLiveContent ? 1200 : 2000,
+      fragLoadingRetryDelay: isLiveContent ? 1000 : 2000,
       fragLoadingMaxRetryTimeout: 20000,
       startLevel: -1,
       capLevelToPlayerSize: true,
@@ -1336,8 +1472,34 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
     this.hlsPlayer.loadSource(url);
     this.hlsPlayer.attachMedia(video);
 
+    if (isLiveContent) {
+      this.startupWatchdogTimeout = window.setTimeout(() => {
+        if (video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA || video.videoWidth === 0) {
+          this.triggerSoftLiveRecovery('arranque lento sin primer frame', video);
+        }
+      }, 6000);
+
+      this.startPlaybackWatchdog(video);
+    }
+
+    this.hlsPlayer.on(Hls.Events.FRAG_LOADED, (event: any, data: any) => {
+      this.trackLiveFragmentLoop(data, video);
+    });
+
     this.hlsPlayer.on(Hls.Events.MANIFEST_PARSED, () => {
       console.log('✅ HLS Manifest cargado');
+
+      if (isLiveContent) {
+        const liveSyncPosition = this.hlsPlayer?.liveSyncPosition;
+        if (typeof liveSyncPosition === 'number' && Number.isFinite(liveSyncPosition)) {
+          try {
+            video.currentTime = liveSyncPosition;
+          } catch (error) {
+            console.warn('No se pudo ajustar al borde en vivo:', error);
+          }
+        }
+      }
+
       video.volume = volume;
       video.muted = wasMuted;
       this.playVideo(video, autoplay, wasMuted, volume);
@@ -1353,6 +1515,37 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
 
     this.hlsPlayer.on(Hls.Events.ERROR, (event: any, data: any) => {
       const statusCode = data?.response?.code || data?.networkDetails?.status || data?.response?.statusCode;
+      const isNonFatalGapError = !data?.fatal && [
+        'bufferStalledError',
+        'bufferSeekOverHole'
+      ].includes(data?.details);
+
+      if (isNonFatalGapError) {
+        console.warn('⚠️ HLS gap de buffer no fatal:', data?.details);
+        this.isStreamLoading = false;
+        this.cdr.markForCheck();
+        return;
+      }
+
+      if (!data?.fatal && data?.type === Hls.ErrorTypes.MEDIA_ERROR) {
+        console.warn('⚠️ HLS media error no fatal, continuando reproduccion:', data?.details);
+        this.isStreamLoading = false;
+        this.cdr.markForCheck();
+        return;
+      }
+
+      const shouldSoftRecoverLive = this.contentType === 'channels' && !data?.fatal && [
+        'fragLoadError',
+        'fragLoadTimeout',
+        'fragLoopLoadingError',
+        'levelLoadError',
+        'levelLoadTimeOut'
+      ].includes(data?.details);
+
+      if (shouldSoftRecoverLive) {
+        this.triggerSoftLiveRecovery(`error HLS ${data?.details}`, video);
+        return;
+      }
 
       console.error('❌ HLS Error:', {
         type: data?.type,
@@ -1418,12 +1611,24 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
     video.addEventListener('play', () => {
       this.isPlaying = true;
       this.isStreamLoading = false;
+      this.softRecoveryCount = 0;
+      this.recentFragmentIds = [];
+      if (this.startupWatchdogTimeout) {
+        clearTimeout(this.startupWatchdogTimeout);
+        this.startupWatchdogTimeout = undefined;
+      }
       this.cdr.markForCheck();
     });
 
     video.addEventListener('playing', () => {
       this.isPlaying = true;
       this.isStreamLoading = false;
+      this.softRecoveryCount = 0;
+      this.recentFragmentIds = [];
+      if (this.startupWatchdogTimeout) {
+        clearTimeout(this.startupWatchdogTimeout);
+        this.startupWatchdogTimeout = undefined;
+      }
       this.cdr.markForCheck();
     });
 
@@ -1457,6 +1662,10 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
 
     video.addEventListener('loadeddata', () => {
       this.isStreamLoading = false;
+      if (this.startupWatchdogTimeout) {
+        clearTimeout(this.startupWatchdogTimeout);
+        this.startupWatchdogTimeout = undefined;
+      }
       if (this.retryCount > 0 || this.hasError) {
         console.log('✅ Video loadeddata, reseteando estado');
         this.retryCount = 0;
