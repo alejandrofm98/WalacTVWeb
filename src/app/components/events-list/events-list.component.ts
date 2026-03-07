@@ -1,4 +1,14 @@
-import { Component, OnInit, inject, ElementRef, ViewChild, HostListener } from '@angular/core';
+import {
+  AfterViewInit,
+  Component,
+  OnInit,
+  inject,
+  ElementRef,
+  ViewChild,
+  ViewChildren,
+  QueryList,
+  HostListener
+} from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
@@ -24,9 +34,10 @@ export interface ChannelGroup {
   templateUrl: './events-list.component.html',
   styleUrls: ['./events-list.component.css']
 })
-export class EventsListComponent implements OnInit {
+export class EventsListComponent implements OnInit, AfterViewInit {
   @ViewChild('categorySearchInput') categorySearchInput!: ElementRef;
   @ViewChild('categoryOptions') categoryOptions!: ElementRef;
+  @ViewChildren('eventCard') eventCards!: QueryList<ElementRef<HTMLDivElement>>;
 
   private calendarService = inject(CalendarService);
   private playerState = inject(PlayerStateService);
@@ -46,11 +57,21 @@ export class EventsListComponent implements OnInit {
   categorySearch = '';
   isCategoryOpen = false;
   highlightedCategoryIndex = -1;
+  private shouldAutoScrollToLive = false;
+  private hasAutoScrolledToLive = false;
+  showBackToTop = false;
 
   ngOnInit(): void {
     // Establecer fecha de hoy por defecto
     this.selectedDate = new Date().toISOString().split('T')[0];
+    this.scheduleLiveAutoScroll(this.selectedDate);
     this.loadEvents();
+  }
+
+  ngAfterViewInit(): void {
+    this.eventCards.changes.subscribe(() => {
+      this.scrollToLatestLiveEventIfNeeded();
+    });
   }
 
   loadEvents(): void {
@@ -63,6 +84,7 @@ export class EventsListComponent implements OnInit {
         this.totalEvents = response.total_eventos || 0;
         this.extractCategories();
         this.loading = false;
+        setTimeout(() => this.scrollToLatestLiveEventIfNeeded());
       },
       error: (err) => {
         this.error = 'Error al cargar los eventos';
@@ -99,11 +121,13 @@ export class EventsListComponent implements OnInit {
     }
 
     this.selectedDate = date;
+    this.scheduleLiveAutoScroll(this.selectedDate);
     this.loadEvents();
   }
 
   goToToday(): void {
     this.selectedDate = new Date().toISOString().split('T')[0];
+    this.scheduleLiveAutoScroll(this.selectedDate);
     this.loadEvents();
   }
 
@@ -112,6 +136,7 @@ export class EventsListComponent implements OnInit {
     const date = new Date(this.selectedDate);
     date.setDate(date.getDate() - 1);
     this.selectedDate = date.toISOString().split('T')[0];
+    this.scheduleLiveAutoScroll(this.selectedDate);
     this.loadEvents();
   }
 
@@ -120,6 +145,7 @@ export class EventsListComponent implements OnInit {
     const date = new Date(this.selectedDate);
     date.setDate(date.getDate() + 1);
     this.selectedDate = date.toISOString().split('T')[0];
+    this.scheduleLiveAutoScroll(this.selectedDate);
     this.loadEvents();
   }
 
@@ -318,6 +344,48 @@ export class EventsListComponent implements OnInit {
     }
   }
 
+  private scrollToLatestLiveEventIfNeeded(): void {
+    if (!this.shouldAutoScrollToLive || this.hasAutoScrolledToLive || !this.isToday()) {
+      return;
+    }
+
+    const latestLiveIndex = this.filteredEvents.reduce((lastLiveIndex, event, index) => {
+      return this.getLiveStatus(event) === 'live' ? index : lastLiveIndex;
+    }, -1);
+
+    if (latestLiveIndex < 0) {
+      this.shouldAutoScrollToLive = false;
+      return;
+    }
+
+    const targetCard = this.eventCards.get(latestLiveIndex)?.nativeElement;
+    if (!targetCard) {
+      return;
+    }
+
+    targetCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    this.hasAutoScrolledToLive = true;
+    this.shouldAutoScrollToLive = false;
+  }
+
+  private scheduleLiveAutoScroll(date: string): void {
+    if (date === this.getTodayDateString()) {
+      this.shouldAutoScrollToLive = true;
+      this.hasAutoScrolledToLive = false;
+      return;
+    }
+
+    this.shouldAutoScrollToLive = false;
+  }
+
+  private getTodayDateString(): string {
+    return new Date().toISOString().split('T')[0];
+  }
+
+  scrollToTop(): void {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
   get filteredCategories(): string[] {
     if (!this.categorySearch.trim()) {
       return this.categories;
@@ -448,5 +516,10 @@ export class EventsListComponent implements OnInit {
     if (!target.closest('.searchable-select')) {
       this.isCategoryOpen = false;
     }
+  }
+
+  @HostListener('window:scroll')
+  onWindowScroll(): void {
+    this.showBackToTop = window.scrollY > 500;
   }
 }

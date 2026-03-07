@@ -2015,6 +2015,11 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
       return;
     }
 
+    if (this.isCasting) {
+      this.disconnectCastSession();
+      return;
+    }
+
     this.castError = '';
     this.isCastConnecting = true;
     this.cdr.markForCheck();
@@ -2065,6 +2070,28 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
         : 'No se pudo iniciar Chromecast';
     } finally {
       this.isCastConnecting = false;
+      this.cdr.markForCheck();
+    }
+  }
+
+  private disconnectCastSession(): void {
+    const castFramework = this.getCastFramework();
+    if (!castFramework) {
+      return;
+    }
+
+    try {
+      castFramework.CastContext.getInstance().endCurrentSession(true);
+      this.isCasting = false;
+      this.isCastConnecting = false;
+      this.castError = '';
+
+      const video = this.videoElement?.nativeElement;
+      void video?.play().catch(() => undefined);
+    } catch (error) {
+      console.error('Error desconectando Chromecast:', error);
+      this.castError = 'No se pudo desconectar Chromecast';
+    } finally {
       this.cdr.markForCheck();
     }
   }

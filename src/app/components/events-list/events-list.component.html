@@ -101,6 +101,7 @@
   <div *ngIf="!loading && !error && hasEvents" class="events-list">
     <div class="events-grid">
       <div *ngFor="let event of filteredEvents" 
+           #eventCard
            class="event-card" 
            [style.--sport-color]="getSportColor(event.categoria)">
         
@@ -152,4 +153,16 @@
       </div>
     </div>
   </div>
+
+  <button
+    *ngIf="showBackToTop"
+    type="button"
+    class="back-to-top"
+    (click)="scrollToTop()"
+    aria-label="Volver arriba">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+      <path d="M12 19V5" stroke-linecap="round"/>
+      <path d="M5 12l7-7 7 7" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+  </button>
 </div>

@@ -20,8 +20,6 @@ declare namespace chrome.cast {
       streamType: string;
       duration: number;
       customData?: unknown;
-      hlsSegmentFormat?: string;
-      hlsVideoSegmentFormat?: string;
     }
 
     class LoadRequest {
@@ -54,6 +52,7 @@ declare namespace cast.framework {
     setOptions(options: CastOptions): void;
     requestSession(): Promise<void>;
     getCurrentSession(): CastSession | null;
+    endCurrentSession(stopCasting: boolean): void;
     addEventListener(eventType: CastContextEventType, listener: (event: CastStateEventData) => void): void;
     removeEventListener(eventType: CastContextEventType, listener: (event: CastStateEventData) => void): void;
   }
@@ -82,18 +81,4 @@ declare namespace cast.framework {
     castState: CastState;
   }
 
-  namespace messages {
-    const HlsSegmentFormat: {
-      AAC: string;
-      FMP4: string;
-      MP3: string;
-      TS: string;
-      TS_AAC: string;
-    };
-
-    const HlsVideoSegmentFormat: {
-      FMP4: string;
-    };
-
-  }
 }

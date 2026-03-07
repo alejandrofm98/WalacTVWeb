@@ -12,6 +12,7 @@
   </div>
 
   <div class="video-container"
+       [class.casting]="isCasting"
        (mousemove)="onMouseMove()"
        (mouseleave)="onMouseLeave()"
        (touchstart)="onTouchStart($event)"
@@ -20,9 +21,17 @@
     <video
       #videoElement
       class="video-element"
+      [class.hidden-for-cast]="isCasting"
       playsinline
       preload="auto">
     </video>
+
+    <div class="cast-screen" *ngIf="isCasting">
+      <div class="cast-screen-content">
+        <img src="/chromecast.png" alt="" class="cast-screen-icon">
+        <span>Contenido reproduciendose en Chromecast</span>
+      </div>
+    </div>
 
     <!-- Stream Loading / Reconnecting HUD -->
     <div class="stream-hud" [class.visible]="isStreamLoading || hasError">
@@ -207,7 +216,7 @@
             [class.connecting]="isCastConnecting"
             [disabled]="!streamUrl || isCastConnecting"
             (click)="castCurrentStream()"
-            [attr.aria-label]="isCasting ? 'Chromecast conectado' : 'Enviar a Chromecast'">
+            [attr.aria-label]="isCasting ? 'Desconectar Chromecast' : 'Enviar a Chromecast'">
             <img src="/chromecast.png" alt="" class="cast-button-icon">
           </button>
           <button class="control-button" (click)="toggleFullscreen()">
@@ -221,7 +230,7 @@
 
       <div class="cast-status" *ngIf="isCasting || isCastConnecting || castError">
         <span *ngIf="isCastConnecting">Conectando con Chromecast...</span>
-        <span *ngIf="isCasting">Reproduciendo en Chromecast</span>
+        <span *ngIf="isCasting">Reproduciendo en Chromecast. Pulsa de nuevo para desconectar.</span>
         <span *ngIf="!isCastConnecting && !isCasting && castError">{{ castError }}</span>
       </div>
     </div>
