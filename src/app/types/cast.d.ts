@@ -9,12 +9,19 @@ declare namespace chrome.cast {
 
   namespace media {
     const DEFAULT_MEDIA_RECEIVER_APP_ID: string;
+    const StreamType: {
+      BUFFERED: string;
+      LIVE: string;
+    };
 
     class MediaInfo {
       constructor(contentId: string, contentType: string);
       metadata: any;
       streamType: string;
       duration: number;
+      customData?: unknown;
+      hlsSegmentFormat?: string;
+      hlsVideoSegmentFormat?: string;
     }
 
     class LoadRequest {
@@ -39,4 +46,54 @@ declare namespace chrome.cast {
 
 interface Window {
   __onGCastApiAvailable?: (isAvailable: boolean) => void;
+}
+
+declare namespace cast.framework {
+  class CastContext {
+    static getInstance(): CastContext;
+    setOptions(options: CastOptions): void;
+    requestSession(): Promise<void>;
+    getCurrentSession(): CastSession | null;
+    addEventListener(eventType: CastContextEventType, listener: (event: CastStateEventData) => void): void;
+    removeEventListener(eventType: CastContextEventType, listener: (event: CastStateEventData) => void): void;
+  }
+
+  class CastSession {
+    loadMedia(request: chrome.cast.media.LoadRequest): Promise<void>;
+  }
+
+  interface CastOptions {
+    receiverApplicationId: string;
+    autoJoinPolicy: chrome.cast.AutoJoinPolicy;
+  }
+
+  enum CastContextEventType {
+    CAST_STATE_CHANGED = 'caststatechanged'
+  }
+
+  enum CastState {
+    NO_DEVICES_AVAILABLE = 'NO_DEVICES_AVAILABLE',
+    NOT_CONNECTED = 'NOT_CONNECTED',
+    CONNECTING = 'CONNECTING',
+    CONNECTED = 'CONNECTED'
+  }
+
+  interface CastStateEventData {
+    castState: CastState;
+  }
+
+  namespace messages {
+    const HlsSegmentFormat: {
+      AAC: string;
+      FMP4: string;
+      MP3: string;
+      TS: string;
+      TS_AAC: string;
+    };
+
+    const HlsVideoSegmentFormat: {
+      FMP4: string;
+    };
+
+  }
 }

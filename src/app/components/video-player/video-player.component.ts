@@ -64,6 +64,12 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
   currentItemIndex: number = -1;
 
   isFullscreen = false;
+  isCastSupported = false;
+  canCast = false;
+  isCasting = false;
+  isCastConnecting = false;
+  castError = '';
+  private castTestUrlOverride = '';
 
   showChannelOverlay = false;
   private hideChannelOverlayTimeout?: number;
@@ -89,6 +95,8 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
 
   private itemsLoaded = false;
   private boundKeyboardHandler: ((event: KeyboardEvent) => void) | null = null;
+  private previousGCastApiAvailableHandler?: (isAvailable: boolean) => void;
+  private castStateChangedHandler?: (event: cast.framework.CastStateEventData) => void;
 
   // === VOD Progress Bar State ===
   currentTime = 0;
@@ -108,6 +116,7 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
 
   private readonly BATCH_SIZE = 100;
   private readonly PRELOAD_THRESHOLD = 20;
+  private readonly DEFAULT_CAST_TEST_URL = 'https://devstreaming-cdn.apple.com/videos/streaming/examples/img_bipbop_adv_example_ts/master.m3u8';
   private currentPage = 1;
   private totalItems = 0;
   private isLoadingMore = false;
@@ -238,6 +247,8 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   ngOnInit() {
+    this.initializeCastApi();
+    this.initializeCastTestOverride();
     this.contentType = this.playerState.getContentType();
 
     this.route.paramMap.subscribe(async params => {
@@ -259,15 +270,15 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
       if (savedEventTitle && savedEventChannels.length > 0) {
         const savedSlug = slugify(savedEventTitle);
         const isEventMatch = savedSlug === slug || slug.includes(savedSlug) || savedSlug.includes(slug);
-        
+
         if (isEventMatch) {
           console.log('Recuperando evento guardado:', savedEventTitle);
           this.eventChannels = savedEventChannels;
           this.eventTitle = savedEventTitle;
           this.updateQualitySelectors();
-          
+
           let initialChannel: ChannelResolved | undefined;
-          
+
           if (savedSelectedChannelId) {
             initialChannel = this.eventChannels.find(
               c => String(c.channel_id) === String(savedSelectedChannelId)
@@ -344,7 +355,7 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
   private async setCurrentItem(item: ContentItem): Promise<void> {
     this.currentItem = item;
     this.isChannelMode = true;
-    
+
     const savedEventTitle = this.playerState.getEventTitle();
     if (!savedEventTitle) {
       this.eventTitle = item.nombre;
@@ -749,7 +760,7 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
     });
 
     const grouped = new Map<string, ChannelResolved[]>();
-    
+
     this.eventChannels.forEach(channel => {
       const key = channel.display_name;
       if (!grouped.has(key)) {
@@ -794,16 +805,16 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
     this.selectedEventChannel = channel;
     this.playerState.setSelectedChannelId(channel.channel_id);
     this.showQualitySelector = true;
-    
+
     this.retryCount = 0;
     this.hasError = false;
     this.errorMessage = '';
     this.isStreamLoading = true;
-    
+
     if (this.videoElement) {
       this.reloadStreamWithChannel(channel);
     }
-    
+
     this.cdr.markForCheck();
   }
 
@@ -822,7 +833,7 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
       next: (iptvChannel) => {
         if (iptvChannel) {
           this.currentItem = iptvChannel;
-          
+
           const originalUrl = (iptvChannel as any).stream_url || (iptvChannel as any).url || '';
           if (!originalUrl) {
             console.error('No hay URL original para el canal:', iptvChannel);
@@ -1103,7 +1114,7 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
       const extMatch = lastPart.match(/\.(ts|m3u8|mp4|mkv|avi)$/i);
       extension = extMatch ? extMatch[0] : '';
     }
-    
+
     const streamId = lastPart.replace(/\.(ts|m3u8|mp4|mkv|avi)$/i, '');
 
     let proxyBaseUrl = baseUrl;
@@ -1186,6 +1197,8 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
         video.removeEventListener('keydown', this.boundKeyboardHandler);
       }
     }
+
+    this.teardownCastApi();
 
     if (this.boundTimeUpdateHandler || this.boundProgressHandler ||
         this.boundLoadedMetadataHandler || this.boundSeekedHandler || this.boundSeekingHandler) {
@@ -1416,9 +1429,9 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
             video.muted = true;
             this.isMuted = true;
             this.volume = 0;
-            // Opcional: no guardamos esto en el playerState para recordar que el usuario 
+            // Opcional: no guardamos esto en el playerState para recordar que el usuario
             // realmente lo quería con sonido, solo que el navegador nos forzó.
-            
+
             video.play().catch(e => {
               console.error('❌ Autoplay silenciado también bloqueado:', e);
               this.isPlaying = false;
@@ -1567,7 +1580,7 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
       if (isRecoverableError && this.retryCount < this.MAX_RETRIES) {
         this.retryCount++;
         const delay = 1500 * Math.pow(1.5, this.retryCount - 1); // Exponential backoff
-        
+
         console.warn(`⚠️ Error de red o código ${statusCode || 'desconocido'}. Reintento ${this.retryCount}/${this.MAX_RETRIES} en ${delay}ms`);
 
         this.hasError = true;
@@ -1587,18 +1600,18 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
 
         this.retryTimeout = window.setTimeout(() => {
           console.log(`🔄 Reintentando carga del stream HLS (Intento ${this.retryCount})...`);
-          
+
           // En lugar de usar startLoad() que a veces falla con streams IPTV,
           // forzamos la recarga completa del stream.
           this.reloadStream();
         }, delay);
-        
+
       } else if (this.retryCount >= this.MAX_RETRIES) {
         console.error('❌ Error fatal definitivo en HLS tras máximos reintentos:', data.type);
         this.hasError = true;
         this.errorMessage = `Error de reproducción. Por favor, intenta de nuevo más tarde.`;
         this.cdr.markForCheck();
-        
+
         if (this.hlsPlayer) {
           try {
             this.hlsPlayer.destroy();
@@ -1745,7 +1758,7 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
 
       if (errorCode === MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED ||
           errorCode === MediaError.MEDIA_ERR_DECODE) {
-        
+
         // ✅ Intento de recuperación con otra extensión
         if (this.tryNextExtension()) {
           console.warn(`🔄 Error de formato (${errorCode}), intentando con extensión: ${this.currentExtension}`);
@@ -1798,7 +1811,7 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
     if (!this.currentExtension) return false;
 
     const ext = this.currentExtension.toLowerCase();
-    
+
     if (ext === '.mp4') {
       this.currentExtension = '.ts';
       return true;
@@ -1866,6 +1879,289 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
       console.log('🎬 Reinicializando player...');
       this.initializePlayer(true);
     }, 500);
+  }
+
+  private initializeCastApi(): void {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    if (this.isCastFrameworkReady()) {
+      this.setupCastContext();
+      return;
+    }
+
+    this.previousGCastApiAvailableHandler = window.__onGCastApiAvailable;
+    window.__onGCastApiAvailable = (isAvailable: boolean) => {
+      this.previousGCastApiAvailableHandler?.(isAvailable);
+
+      if (isAvailable && this.isCastFrameworkReady()) {
+        this.setupCastContext();
+        return;
+      }
+
+      if (isAvailable) {
+        window.setTimeout(() => {
+          if (this.isCastFrameworkReady()) {
+            this.setupCastContext();
+            return;
+          }
+
+          this.isCastSupported = false;
+          this.canCast = false;
+          this.isCasting = false;
+          this.isCastConnecting = false;
+          this.cdr.markForCheck();
+        }, 0);
+        return;
+      }
+
+      this.isCastSupported = false;
+      this.canCast = false;
+      this.isCasting = false;
+      this.isCastConnecting = false;
+      this.cdr.markForCheck();
+    };
+  }
+
+  private setupCastContext(): void {
+    try {
+      const castFramework = this.getCastFramework();
+      const chromeCast = this.getChromeCast();
+
+      if (!castFramework || !chromeCast) {
+        return;
+      }
+
+      this.isCastSupported = true;
+
+      const castContext = castFramework.CastContext.getInstance();
+      castContext.setOptions({
+        receiverApplicationId: chromeCast.media.DEFAULT_MEDIA_RECEIVER_APP_ID,
+        autoJoinPolicy: chromeCast.AutoJoinPolicy.ORIGIN_SCOPED
+      });
+
+      if (this.castStateChangedHandler) {
+        castContext.removeEventListener(
+          castFramework.CastContextEventType.CAST_STATE_CHANGED,
+          this.castStateChangedHandler
+        );
+      }
+
+      this.castStateChangedHandler = (event: cast.framework.CastStateEventData) => {
+        this.updateCastState(event.castState);
+      };
+
+      castContext.addEventListener(
+        castFramework.CastContextEventType.CAST_STATE_CHANGED,
+        this.castStateChangedHandler
+      );
+
+      const hasActiveSession = !!castContext.getCurrentSession();
+      this.updateCastState(
+        hasActiveSession ? castFramework.CastState.CONNECTED : castFramework.CastState.NOT_CONNECTED
+      );
+    } catch (error) {
+      console.error('Error inicializando Chromecast:', error);
+      this.isCastSupported = false;
+      this.canCast = false;
+      this.isCasting = false;
+      this.isCastConnecting = false;
+      this.cdr.markForCheck();
+    }
+  }
+
+  private teardownCastApi(): void {
+    if (typeof window !== 'undefined' && window.__onGCastApiAvailable === this.previousGCastApiAvailableHandler) {
+      return;
+    }
+
+    if (typeof window !== 'undefined') {
+      window.__onGCastApiAvailable = this.previousGCastApiAvailableHandler;
+    }
+
+    const castFramework = this.getCastFramework();
+
+    if (this.castStateChangedHandler && castFramework) {
+      castFramework.CastContext.getInstance().removeEventListener(
+        castFramework.CastContextEventType.CAST_STATE_CHANGED,
+        this.castStateChangedHandler
+      );
+    }
+  }
+
+  private updateCastState(castState: cast.framework.CastState): void {
+    this.isCastSupported = true;
+    this.canCast = castState !== cast.framework.CastState.NO_DEVICES_AVAILABLE;
+    this.isCastConnecting = castState === cast.framework.CastState.CONNECTING;
+    this.isCasting = castState === cast.framework.CastState.CONNECTED;
+
+    if (castState !== cast.framework.CastState.CONNECTED) {
+      this.castError = '';
+    }
+
+    this.cdr.markForCheck();
+  }
+
+  async castCurrentStream(): Promise<void> {
+    const castFramework = this.getCastFramework();
+    if (!this.streamUrl) {
+      return;
+    }
+
+    if (!castFramework || !this.getChromeCast()) {
+      this.castError = 'Chromecast no esta disponible en este navegador';
+      this.cdr.markForCheck();
+      return;
+    }
+
+    this.castError = '';
+    this.isCastConnecting = true;
+    this.cdr.markForCheck();
+
+    try {
+      const castUrl = this.getCastStreamUrl();
+      console.log('Chromecast load request:', {
+        castUrl,
+        contentType: this.getCastContentType(castUrl),
+        title: this.eventTitle || this.currentItem?.nombre || 'WalacTV'
+      });
+
+      const castContext = castFramework.CastContext.getInstance();
+
+      if (!castContext.getCurrentSession()) {
+        await castContext.requestSession();
+      }
+
+      const session = castContext.getCurrentSession();
+      if (!session) {
+        throw new Error('No se pudo conectar con el dispositivo');
+      }
+
+      await session.loadMedia(this.buildCastLoadRequest());
+
+      const video = this.videoElement?.nativeElement;
+      video?.pause();
+
+      this.isCasting = true;
+    } catch (error) {
+      const castError = error as { code?: string; description?: string; details?: unknown } | undefined;
+      const serializedDetails = (() => {
+        try {
+          return JSON.stringify(castError?.details ?? null);
+        } catch {
+          return String(castError?.details ?? '');
+        }
+      })();
+
+      console.error('Error enviando a Chromecast:', {
+        raw: error,
+        code: castError?.code,
+        description: castError?.description,
+        details: castError?.details
+      });
+      this.castError = castError?.code
+        ? `Chromecast: ${castError.code}${castError?.description ? ` - ${castError.description}` : ''}${serializedDetails && serializedDetails !== 'null' ? ` (${serializedDetails})` : ''}`
+        : 'No se pudo iniciar Chromecast';
+    } finally {
+      this.isCastConnecting = false;
+      this.cdr.markForCheck();
+    }
+  }
+
+  private buildCastLoadRequest(): chrome.cast.media.LoadRequest {
+    const castUrl = this.getCastStreamUrl();
+    const mediaInfo = new chrome.cast.media.MediaInfo(castUrl, 'application/x-mpegURL');
+
+    mediaInfo.streamType = chrome.cast.media.StreamType.LIVE;
+
+    const metadata = new chrome.cast.media.GenericMediaMetadata();
+    metadata.title = this.eventTitle || this.currentItem?.nombre || 'WalacTV';
+    mediaInfo.metadata = metadata;
+
+    const request = new chrome.cast.media.LoadRequest(mediaInfo);
+    request.autoplay = true;
+    return request;
+}
+
+  private getCastStreamUrl(): string {
+    if (this.castTestUrlOverride) {
+      return this.castTestUrlOverride;
+    }
+
+    if (this.contentType !== 'channels') {
+      return this.streamUrl;
+    }
+
+    const username = localStorage.getItem('iptv_username') || '';
+    const password = localStorage.getItem('iptv_password') || '';
+    const streamId = this.extractStreamIdFromUrl(this.streamUrl);
+
+    if (!username || !password || !streamId) {
+      return this.streamUrl;
+    }
+
+    const encodedUsername = encodeURIComponent(username);
+    const encodedPassword = encodeURIComponent(password);
+    const encodedStreamId = encodeURIComponent(streamId);
+
+    return `https://iptv.walerike.com/cast/${encodedUsername}/${encodedPassword}/${encodedStreamId}/playlist.m3u8`;
+  }
+
+  private extractStreamIdFromUrl(url: string): string {
+    const cleanUrl = url.split('?')[0];
+    const segments = cleanUrl.split('/').filter(Boolean);
+    const lastSegment = segments[segments.length - 1] || '';
+
+    return lastSegment.replace(/\.(ts|m3u8|mp4|mkv|avi)$/i, '');
+  }
+
+  private getCastContentType(url: string): string {
+    const normalizedUrl = url.toLowerCase();
+    const extension = this.currentExtension.toLowerCase();
+
+    if (normalizedUrl.includes('.m3u8') || extension === '.m3u8' || (this.contentType === 'channels' && !extension)) {
+      return 'application/x-mpegURL';
+    }
+
+    if (normalizedUrl.includes('.ts') || extension === '.ts') {
+      return 'video/mp2t';
+    }
+
+    if (normalizedUrl.includes('.mkv') || extension === '.mkv') {
+      return 'video/x-matroska';
+    }
+
+    if (normalizedUrl.includes('.avi') || extension === '.avi') {
+      return 'video/x-msvideo';
+    }
+
+    return 'video/mp4';
+  }
+
+  private initializeCastTestOverride(): void {
+    const castTestUrl = this.route.snapshot.queryParamMap.get('castTestUrl');
+    if (castTestUrl) {
+      this.castTestUrlOverride = castTestUrl;
+      return;
+    }
+
+    const castTestEnabled = this.route.snapshot.queryParamMap.get('castTest') === '1';
+    if (castTestEnabled) {
+      this.castTestUrlOverride = this.DEFAULT_CAST_TEST_URL;
+    }
+  }
+
+  private isCastFrameworkReady(): boolean {
+    return !!this.getCastFramework() && !!this.getChromeCast();
+  }
+
+  private getCastFramework(): typeof cast.framework | null {
+    return (window as any).cast?.framework ?? null;
+  }
+
+  private getChromeCast(): typeof chrome.cast | null {
+    return (window as any).chrome?.cast ?? null;
   }
 
   togglePlayPause() {

@@ -201,6 +201,15 @@
         </div>
 
         <div class="controls-right">
+          <button
+            class="control-button cast-button"
+            [class.active]="isCasting"
+            [class.connecting]="isCastConnecting"
+            [disabled]="!streamUrl || isCastConnecting"
+            (click)="castCurrentStream()"
+            [attr.aria-label]="isCasting ? 'Chromecast conectado' : 'Enviar a Chromecast'">
+            <img src="/chromecast.png" alt="" class="cast-button-icon">
+          </button>
           <button class="control-button" (click)="toggleFullscreen()">
             <svg viewBox="0 0 24 24" fill="currentColor">
               <path
@@ -208,6 +217,12 @@
             </svg>
           </button>
         </div>
+      </div>
+
+      <div class="cast-status" *ngIf="isCasting || isCastConnecting || castError">
+        <span *ngIf="isCastConnecting">Conectando con Chromecast...</span>
+        <span *ngIf="isCasting">Reproduciendo en Chromecast</span>
+        <span *ngIf="!isCastConnecting && !isCasting && castError">{{ castError }}</span>
       </div>
     </div>
   </div>
