@@ -220,7 +220,7 @@
           <button
             *ngFor="let ch of group.channels; trackBy: trackByChannelId"
             class="quality-option"
-            [class.active]="selectedEventChannel?.channel_id === ch.channel_id"
+            [class.active]="isSelectedQuality(ch)"
             (click)="selectQuality(ch)">
             {{ ch.quality || 'SD' }}
           </button>

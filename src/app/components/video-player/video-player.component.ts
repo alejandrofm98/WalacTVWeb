@@ -779,7 +779,11 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   trackByChannelId(index: number, channel: ChannelResolved): string {
-    return channel.channel_id;
+    return `${channel.channel_id}-${channel.source_name}-${channel.quality}-${index}`;
+  }
+
+  isSelectedQuality(channel: ChannelResolved): boolean {
+    return this.selectedEventChannel === channel;
   }
 
   trackByStreamUrl(index: number, stream: StreamSource): string {
