@@ -4,6 +4,8 @@ import { VideoPlayerComponent } from './components/video-player/video-player.com
 import { IptvPanelComponent } from './components/iptv-panel/iptv-panel.component';
 import { EventsListComponent } from './components/events-list/events-list.component';
 import { ChannelsComponent } from './components/channels/channels.component';
+import { ReplaysComponent } from './components/replays/replays.component';
+import { ReplayPlayerComponent } from './components/replay-player/replay-player.component';
 import { LoginComponent } from './components/login/login.component';
 import { TestPlayerComponent } from './components/test-player/test-player.component';
 import { authGuard } from './guards/auth.guard';
@@ -26,6 +28,17 @@ export const routes: Routes = [
     component: ChannelsComponent,
     canActivate: [authGuard],
     pathMatch: 'full'
+  },
+  {
+    path: 'replays',
+    component: ReplaysComponent,
+    canActivate: [authGuard],
+    pathMatch: 'full'
+  },
+  {
+    path: 'replays/:slug',
+    component: ReplayPlayerComponent,
+    canActivate: [authGuard]
   },
   {
     path: 'player/:title',

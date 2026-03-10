@@ -42,6 +42,31 @@ export interface IptvSeries {
   stream_url: string;
 }
 
+export interface ReplaySource {
+  label: string;
+  web_embed_url?: string | null;
+  stream_url?: string | null;
+  stream_format?: string | null;
+}
+
+export interface ReplaySourceGroup {
+  group: string;
+  sources: ReplaySource[];
+}
+
+export interface IptvReplay {
+  slug: string;
+  title: string;
+  event_name?: string | null;
+  event_type?: string | null;
+  event_date?: string | null;
+  post_url: string;
+  featured_image_url?: string | null;
+  description?: string | null;
+  video_sources: ReplaySourceGroup[];
+  match_card: string[];
+}
+
 export interface PaginatedResponse<T> {
   total: number;
   page: number;
@@ -61,6 +86,7 @@ export interface ContentStats {
   channels: number;
   movies: number;
   series: number;
+  replays: number;
   total: number;
 }
 
@@ -91,6 +117,27 @@ export class DataService {
     if (search) params = params.set('search', search);
 
     return params;
+  }
+
+  getReplayProxyUrl(url: string): string {
+    const token = this.authService.getToken();
+    const params = new URLSearchParams({ url });
+
+    if (token) {
+      params.set('token', token);
+    }
+
+    return `${this.apiUrl}/api/replay-proxy?${params.toString()}`;
+  }
+
+  getReplayStreamUrl(slug: string, sourceIndex: number, buttonIndex: number): string | null {
+    const token = this.authService.getToken();
+    if (!token) {
+      return null;
+    }
+
+    const params = new URLSearchParams({ token });
+    return `${this.apiUrl}/api/replays/${encodeURIComponent(slug)}/stream/${sourceIndex}/${buttonIndex}?${params.toString()}`;
   }
 
   getChannels(page: number = 1, pageSize: number = 80, group?: string, country?: string, search?: string): Observable<PaginatedResponse<IptvChannel>> {
@@ -201,7 +248,39 @@ export class DataService {
       `${this.apiUrl}/api/content/stats`,
       { headers: this.getHeaders() }
     ).pipe(
-      catchError(() => of({ channels: 0, movies: 0, series: 0, total: 0 }))
+      catchError(() => of({ channels: 0, movies: 0, series: 0, replays: 0, total: 0 }))
+    );
+  }
+
+  getReplays(
+    page: number = 1,
+    pageSize: number = 24,
+    eventType?: string,
+    search?: string
+  ): Observable<PaginatedResponse<IptvReplay>> {
+    let params = new HttpParams()
+      .set('page', page.toString())
+      .set('page_size', pageSize.toString());
+
+    if (eventType) params = params.set('event_type', eventType);
+    if (search) params = params.set('search', search);
+
+    return this.http.get<PaginatedResponse<IptvReplay>>(
+      `${this.apiUrl}/api/replays`,
+      { headers: this.getHeaders(), params }
+    ).pipe(
+      catchError(() =>
+        of({ total: 0, page, page_size: pageSize, pages: 0, has_next: false, has_prev: false, items: [] })
+      )
+    );
+  }
+
+  getReplay(slug: string): Observable<IptvReplay | null> {
+    return this.http.get<IptvReplay>(
+      `${this.apiUrl}/api/replays/${slug}`,
+      { headers: this.getHeaders() }
+    ).pipe(
+      catchError(() => of(null))
     );
   }
 

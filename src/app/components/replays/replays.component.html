@@ -1,0 +1,162 @@
+<app-navbar></app-navbar>
+<div class="replays-page">
+  <header class="page-header">
+    <div class="header-content">
+      <h1 class="page-title">Replays</h1>
+      <p class="page-subtitle">Eventos UFC archivados desde Watch Wrestling</p>
+      <div class="header-stats">
+        <span class="stat-badge">
+          <span class="stat-dot"></span>
+          {{ replaysTotal | numberFormat }} disponibles
+        </span>
+      </div>
+    </div>
+  </header>
+
+  <div class="toolbar">
+    <div class="search-group">
+      <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="11" cy="11" r="8"/>
+        <path d="m21 21-4.3-4.3"/>
+      </svg>
+      <input
+        type="text"
+        class="search-input"
+        placeholder="Buscar evento, cartelera o descripcion..."
+        [ngModel]="searchQuery"
+        (ngModelChange)="onSearchInput($event)"
+      />
+    </div>
+
+    <div class="searchable-select" [class.open]="isEventTypeOpen">
+      <div class="select-trigger" (click)="toggleEventType()">
+        <span class="select-value">{{ selectedEventTypeLabel }}</span>
+        <svg class="select-arrow" [class.open]="isEventTypeOpen" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+        </svg>
+      </div>
+      <div class="select-dropdown" *ngIf="isEventTypeOpen">
+        <input
+          #eventTypeSearchInput
+          type="text"
+          class="select-search"
+          placeholder="Buscar tipo..."
+          [(ngModel)]="eventTypeSearch"
+          (click)="$event.stopPropagation()"
+          (input)="$event.stopPropagation(); highlightedEventTypeIndex = -1"
+          (keydown)="onEventTypeKeydown($event)"
+        />
+        <div class="select-options" #eventTypeOptionsList>
+          <div
+            class="select-option"
+            *ngIf="!eventTypeSearch || 'todos los tipos'.includes(eventTypeSearch.toLowerCase())"
+            [class.selected]="!selectedEventType"
+            [class.highlighted]="highlightedEventTypeIndex === 0"
+            (click)="selectEventType('')">
+            Todos los tipos
+          </div>
+          <div
+            class="select-option"
+            *ngFor="let opt of filteredEventTypes; let i = index"
+            [class.selected]="selectedEventType === opt.value"
+            [class.highlighted]="highlightedEventTypeIndex === i + 1"
+            (click)="selectEventType(opt.value)">
+            {{ opt.label }}
+          </div>
+          <div
+            class="select-option empty"
+            *ngIf="filteredEventTypes.length === 0 && eventTypeSearch && !'todos los tipos'.includes(eventTypeSearch.toLowerCase())">
+            No se encontraron tipos
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <button *ngIf="selectedEventType || searchQuery" (click)="clearFilters()" class="clear-btn">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M18 6 6 18"/><path d="m6 6 12 12"/>
+      </svg>
+      Limpiar
+    </button>
+  </div>
+
+  <!-- Skeleton Loading -->
+  <div *ngIf="loading && displayedItems === 0" class="card-grid">
+    <div *ngFor="let item of skeletonItems; trackBy: trackByIndex" class="skeleton-card">
+      <div class="skeleton-poster"></div>
+      <div class="skeleton-body">
+        <div class="skeleton-line skeleton-line--wide"></div>
+        <div class="skeleton-line skeleton-line--medium"></div>
+        <div class="skeleton-pills">
+          <div class="skeleton-pill"></div>
+          <div class="skeleton-pill"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Error -->
+  <div *ngIf="error && displayedItems === 0" class="state-message">
+    <svg class="state-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/>
+    </svg>
+    <h2>Error al cargar</h2>
+    <p>{{ error }}</p>
+    <button (click)="loadContent()" class="retry-btn">Reintentar</button>
+  </div>
+
+  <!-- Empty -->
+  <div *ngIf="!loading && !error && displayedItems === 0" class="state-message">
+    <svg class="state-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/>
+    </svg>
+    <h2>No hay replays disponibles</h2>
+    <p>Intenta con otros filtros o vuelve mas tarde</p>
+  </div>
+
+  <!-- Grid -->
+  <div *ngIf="!loading && !error && displayedItems > 0" class="card-grid">
+    <article
+      *ngFor="let replay of replays; trackBy: trackByReplay"
+      class="replay-card"
+      (click)="openReplay(replay)">
+
+      <div class="card-poster">
+        <img
+          *ngIf="replay.featured_image_url"
+          [src]="replay.featured_image_url"
+          [alt]="replay.title"
+          loading="lazy"
+          class="poster-img" />
+        <div class="poster-gradient"></div>
+        <span class="card-badge">{{ replay.eventTypeLabel }}</span>
+      </div>
+
+      <div class="card-body">
+        <h3 class="card-title">{{ replay.title }}</h3>
+        <span class="card-date" *ngIf="replay.event_date">{{ replay.event_date }}</span>
+
+        <div class="card-meta">
+          <span class="meta-chip">{{ replay.video_sources.length }} grupos</span>
+          <span class="meta-chip">{{ replay.sourceCount }} enlaces</span>
+          <span class="meta-chip" *ngIf="replay.match_card.length">{{ replay.match_card.length }} combates</span>
+        </div>
+      </div>
+
+      <div class="card-hover-overlay">
+        <p class="hover-description">{{ replay.primaryDescription }}</p>
+        <div class="hover-action">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+          Ver Replay
+        </div>
+      </div>
+    </article>
+  </div>
+
+  <div #loadMoreTrigger class="load-trigger" *ngIf="hasMoreReplays">
+    <div *ngIf="loading && displayedItems > 0" class="loading-more">
+      <div class="spinner"></div>
+      <span>Cargando mas replays...</span>
+    </div>
+  </div>
+</div>

@@ -56,7 +56,7 @@
 }
 
 .events-header h1 {
-  font-family: 'Space Grotesk', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family: 'Outfit', sans-serif;
   font-size: clamp(32px, 5vw, 48px);
   font-weight: 700;
   color: var(--text-primary);
@@ -119,7 +119,7 @@
 }
 
 .tab-text {
-  font-family: 'Space Grotesk', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family: 'Outfit', sans-serif;
   font-weight: 700;
   font-size: 15px;
   color: var(--text-secondary);
@@ -159,7 +159,7 @@
 }
 
 .count-value {
-  font-family: 'Space Grotesk', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family: 'Outfit', sans-serif;
   font-size: 13px;
   font-weight: 700;
   color: var(--accent-secondary);
@@ -401,7 +401,7 @@
 }
 
 .no-events h2 {
-  font-family: 'Space Grotesk', sans-serif;
+  font-family: 'Outfit', sans-serif;
   font-size: 28px;
   font-weight: 600;
   color: var(--text-primary);
@@ -503,7 +503,7 @@
 
 /* Card Content */
 .event-content h3.event-title {
-  font-family: 'Space Grotesk', sans-serif;
+  font-family: 'Outfit', sans-serif;
   font-size: 17px;
   font-weight: 700;
   color: var(--text-primary);

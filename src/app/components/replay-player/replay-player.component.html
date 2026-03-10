@@ -1,0 +1,152 @@
+<app-navbar></app-navbar>
+
+<div class="player-page">
+  <div class="player-shell">
+
+    <nav class="breadcrumb">
+      <button class="back-btn" type="button" (click)="goBack()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="m15 18-6-6 6-6"/>
+        </svg>
+        Replays
+      </button>
+    </nav>
+
+    <!-- Loading -->
+    <div *ngIf="loading" class="state-card">
+      <div class="spinner"></div>
+      <p>Cargando replay...</p>
+    </div>
+
+    <!-- Error -->
+    <div *ngIf="!loading && error" class="state-card state-card--error">
+      <svg class="state-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/>
+      </svg>
+      <p>{{ error }}</p>
+      <button type="button" class="primary-btn" (click)="goBack()">Volver a Replays</button>
+    </div>
+
+    <!-- Main Content -->
+    <ng-container *ngIf="!loading && replay as item">
+
+      <!-- Compact Hero -->
+      <header class="hero">
+        <div class="hero-bg" *ngIf="item.featured_image_url">
+          <img [src]="item.featured_image_url" [alt]="item.title" />
+        </div>
+        <div class="hero-inner">
+          <div class="hero-tags">
+            <span class="tag tag--accent">{{ getEventTypeLabel(item.event_type) }}</span>
+            <span class="tag tag--ghost" *ngIf="item.event_date">{{ item.event_date }}</span>
+            <span class="tag tag--ghost" *ngIf="playbackModeLabel">{{ playbackModeLabel }}</span>
+          </div>
+          <h1>{{ item.title }}</h1>
+          <p class="hero-desc">{{ getPrimaryDescription() }}</p>
+          <div class="hero-pills">
+            <span class="pill">{{ item.video_sources.length }} grupos</span>
+            <span class="pill">{{ getSourceCount() }} enlaces</span>
+            <span class="pill" *ngIf="item.match_card.length">{{ item.match_card.length }} combates</span>
+          </div>
+        </div>
+      </header>
+
+      <!-- Player (full width) -->
+      <section class="player-section">
+        <div class="player-frame" *ngIf="isDirectPlayback && directStreamUrl; else embedBlock">
+          <video
+            #videoElement
+            class="video-el"
+            controls
+            playsinline
+            preload="auto">
+          </video>
+        </div>
+
+        <ng-template #embedBlock>
+          <div #playerFrameShell class="player-frame" *ngIf="trustedEmbedUrl; else noPlayerBlock">
+            <iframe
+              [src]="trustedEmbedUrl"
+              [title]="item.title"
+              allow="autoplay; encrypted-media; fullscreen"
+              allowfullscreen
+              loading="lazy"
+              referrerpolicy="strict-origin-when-cross-origin">
+            </iframe>
+
+            <button
+              class="fs-btn"
+              type="button"
+              (click)="toggleFullscreen()"
+              aria-label="Pantalla completa">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M8 3H5a2 2 0 00-2 2v3"/>
+                <path d="M21 8V5a2 2 0 00-2-2h-3"/>
+                <path d="M3 16v3a2 2 0 002 2h3"/>
+                <path d="M16 21h3a2 2 0 002-2v-3"/>
+              </svg>
+            </button>
+          </div>
+        </ng-template>
+
+        <ng-template #noPlayerBlock>
+          <div class="player-frame player-frame--empty">
+            <div class="empty-player">
+              <svg class="empty-player-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"/>
+                <path d="m10 15 5-3-5-3z"/>
+              </svg>
+              <h3>Sin player disponible</h3>
+              <p>Este enlace no tiene player embebible. Prueba otra fuente.</p>
+            </div>
+          </div>
+        </ng-template>
+      </section>
+
+      <!-- Source Selector (horizontal, below player) -->
+      <section class="sources-section">
+        <div class="sources-group" *ngFor="let group of item.video_sources; let groupIndex = index; trackBy: trackByGroup">
+          <div class="sources-group-label">
+            <span class="group-name">{{ group.group }}</span>
+            <span class="group-count">{{ group.sources.length }}</span>
+          </div>
+          <div class="sources-strip">
+            <button
+              *ngFor="let source of group.sources; let sourceIndex = index; trackBy: trackBySource"
+              type="button"
+              class="source-chip"
+              [class.source-chip--active]="isSelectedSource(groupIndex, sourceIndex)"
+              (click)="selectSource(groupIndex, sourceIndex)">
+              <span class="chip-label">{{ source.label }}</span>
+              <span class="chip-format" *ngIf="!source.web_embed_url">
+                {{ source.stream_url ? (source.stream_format?.includes('mp4') ? 'MP4' : 'HLS') : 'N/A' }}
+              </span>
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Match Card / Cartelera (full width, standalone) -->
+      <section class="matchcard-section" *ngIf="item.match_card.length">
+        <div class="matchcard-header">
+          <h2>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/>
+              <line x1="4" y1="22" x2="4" y2="15"/>
+            </svg>
+            Cartelera
+          </h2>
+          <span class="matchcard-count">{{ item.match_card.length }} combates</span>
+        </div>
+        <div class="matchcard-grid">
+          <div class="fight-card" *ngFor="let match of item.match_card; let i = index">
+            <span class="fight-number">{{ i + 1 }}</span>
+            <span class="fight-name">{{ match }}</span>
+          </div>
+        </div>
+      </section>
+
+    </ng-container>
+
+  </div>
+</div>
