@@ -44,6 +44,9 @@ export interface IptvSeries {
 
 export interface ReplaySource {
   label: string;
+  source_index?: number | null;
+  button_index?: number | null;
+  provider?: string | null;
   web_embed_url?: string | null;
   stream_url?: string | null;
   stream_format?: string | null;

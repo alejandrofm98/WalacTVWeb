@@ -104,11 +104,12 @@ export class ReplayPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   getSelectedGroup(): ReplaySourceGroup | null {
-    if (!this.replay?.video_sources?.length) {
+    const groups = this.getVisibleVideoSources();
+    if (!groups.length) {
       return null;
     }
 
-    return this.replay.video_sources[this.selectedGroupIndex] || null;
+    return groups[this.selectedGroupIndex] || null;
   }
 
   getSelectedSource(): ReplaySource | null {
@@ -142,7 +143,16 @@ export class ReplayPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   getSourceCount(): number {
-    return (this.replay?.video_sources || []).reduce((total, group) => total + group.sources.length, 0);
+    return this.getVisibleVideoSources().reduce((total, group) => total + group.sources.length, 0);
+  }
+
+  getVisibleVideoSources(): ReplaySourceGroup[] {
+    return (this.replay?.video_sources || [])
+      .map((group) => ({
+        ...group,
+        sources: group.sources.filter((source) => !!source.web_embed_url?.trim()),
+      }))
+      .filter((group) => group.sources.length > 0);
   }
 
   trackByGroup(index: number, group: ReplaySourceGroup): string {
@@ -154,7 +164,7 @@ export class ReplayPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   private selectInitialSource(): void {
-    const groups = this.replay?.video_sources || [];
+    const groups = this.getVisibleVideoSources();
     if (!groups.length) {
       this.updateTrustedEmbedUrl();
       this.queuePlaybackInitialization();
@@ -163,7 +173,7 @@ export class ReplayPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
 
     for (let groupIndex = 0; groupIndex < groups.length; groupIndex += 1) {
       const sourceIndex = groups[groupIndex].sources.findIndex(
-        (source) => !!this.getPreferredEmbedUrl(source) || !!this.getDirectUrlForSource(source)
+        (source) => !!this.getPreferredEmbedUrl(source)
       );
       if (sourceIndex >= 0) {
         this.selectedGroupIndex = groupIndex;
@@ -204,8 +214,8 @@ export class ReplayPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
       return null;
     }
 
-    const sourceIndex = this.selectedGroupIndex + 1;
-    const buttonIndex = this.selectedSourceIndex + 1;
+    const sourceIndex = source.source_index || this.selectedGroupIndex + 1;
+    const buttonIndex = source.button_index || this.selectedSourceIndex + 1;
     const slug = this.replay?.slug;
 
     if (slug) {

@@ -44,7 +44,7 @@
           <h1>{{ item.title }}</h1>
           <p class="hero-desc">{{ getPrimaryDescription() }}</p>
           <div class="hero-pills">
-            <span class="pill">{{ item.video_sources.length }} grupos</span>
+            <span class="pill">{{ getVisibleVideoSources().length }} grupos</span>
             <span class="pill">{{ getSourceCount() }} enlaces</span>
             <span class="pill" *ngIf="item.match_card.length">{{ item.match_card.length }} combates</span>
           </div>
@@ -105,7 +105,7 @@
 
       <!-- Source Selector (horizontal, below player) -->
       <section class="sources-section">
-        <div class="sources-group" *ngFor="let group of item.video_sources; let groupIndex = index; trackBy: trackByGroup">
+        <div class="sources-group" *ngFor="let group of getVisibleVideoSources(); let groupIndex = index; trackBy: trackByGroup">
           <div class="sources-group-label">
             <span class="group-name">{{ group.group }}</span>
             <span class="group-count">{{ group.sources.length }}</span>

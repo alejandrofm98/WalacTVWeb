@@ -46,6 +46,56 @@ export class AuthService {
     this.loadStoredSession();
   }
 
+  private extractLoginErrorMessage(error: unknown): string {
+    const fallbackMessage = 'Error al iniciar sesión';
+    const errorResponse = this.getErrorRecord(error)?.['error'];
+
+    if (typeof errorResponse === 'string' && errorResponse.trim()) {
+      return errorResponse;
+    }
+
+    const detail = this.getErrorRecord(errorResponse)?.['detail'];
+    const detailMessage = this.extractMessageValue(detail);
+
+    if (detailMessage) {
+      return detailMessage;
+    }
+
+    const message = this.extractMessageValue(this.getErrorRecord(errorResponse)?.['message']);
+
+    if (message) {
+      return message;
+    }
+
+    return fallbackMessage;
+  }
+
+  private extractMessageValue(value: unknown): string | null {
+    if (typeof value === 'string') {
+      const trimmedValue = value.trim();
+      return trimmedValue || null;
+    }
+
+    if (Array.isArray(value)) {
+      const messages = value
+        .map((item) => this.extractMessageValue(item))
+        .filter((message): message is string => !!message);
+
+      return messages.length ? messages.join(', ') : null;
+    }
+
+    if (value && typeof value === 'object') {
+      const messageRecord = this.getErrorRecord(value);
+      return this.extractMessageValue(messageRecord?.['msg'] ?? messageRecord?.['message']);
+    }
+
+    return null;
+  }
+
+  private getErrorRecord(value: unknown): Record<string, unknown> | null {
+    return value && typeof value === 'object' ? (value as Record<string, unknown>) : null;
+  }
+
   private generateUniqueId(): string {
     return `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
   }
@@ -123,7 +173,7 @@ export class AuthService {
         return { success: false, message: 'Límite de dispositivos alcanzado' };
       }
 
-      const message = error.error?.detail || 'Error al iniciar sesión';
+      const message = this.extractLoginErrorMessage(error);
       return { success: false, message };
     }
   }
