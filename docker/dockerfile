@@ -15,13 +15,17 @@ COPY . .
 # ARGs que vienen de Dokploy
 ARG APP_NAME
 ARG IPTV_API_URL
+ARG API_WALACTV
+ARG ACESTREAM_HOST
+ARG ADMIN_EMAILS
 
 # 🔧 Crear environment.ts dinámicamente para que Angular compile correctamente
-RUN echo "export const environment = { \
-  production: true, \
-  appName: '${APP_NAME}', \
-  iptvApiUrl: '${IPTV_API_URL}' \
-};" > src/environments/environment.ts
+RUN printf "export const environment = {\n  production: true,\n  appName: '%s',\n  apiWalactv: '%s',\n  acestreamHost: '%s',\n  iptvApiUrl: '%s',\n  adminEmails: ['%s']\n};\n" \
+  "$APP_NAME" \
+  "$API_WALACTV" \
+  "$ACESTREAM_HOST" \
+  "$IPTV_API_URL" \
+  "$ADMIN_EMAILS" > src/environments/environment.ts
 
 # Compilar Angular en modo producción
 RUN npm run build -- --configuration production
@@ -39,4 +43,4 @@ COPY --from=builder /app/dist/walactvWeb/browser ./dist
 
 EXPOSE 8080
 
-CMD ["http-server", "./dist", "-p", "8080", "--proxy", "http://localhost:8080?"]
+CMD ["http-server", "./dist", "-p", "8080", "-c-1", "--proxy", "http://localhost:8080?"]

@@ -2,10 +2,13 @@ services:
   angular-prod:
     build:
       context: ..
-      dockerfile: docker/Dockerfile
+      dockerfile: docker/dockerfile
       args:
         - APP_NAME=${APP_NAME:-WalactWeb}
         - IPTV_API_URL=${IPTV_API_URL}
+        - API_WALACTV=${API_WALACTV:-/apiwalactv}
+        - ACESTREAM_HOST=${ACESTREAM_HOST:-/apiace}
+        - ADMIN_EMAILS=${ADMIN_EMAILS:-wale@wale.com}
     container_name: angular-prod
     ports:
       - "8080:8080"
