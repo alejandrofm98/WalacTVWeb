@@ -102,13 +102,27 @@ export class DataService {
   private authService = inject(AuthService);
   private cacheService = inject(CacheService);
 
+  private getValidChannelNumber(raw: Partial<IptvChannel> & Record<string, unknown>): number {
+    const directNumber = this.getPositiveIntegerValue(raw['num']);
+    if (directNumber !== null) {
+      return directNumber;
+    }
+
+    const channelNumber = this.getPositiveIntegerValue(raw['channel_number']);
+    if (channelNumber !== null) {
+      return channelNumber;
+    }
+
+    return 0;
+  }
+
   private normalizeChannel(raw: Partial<IptvChannel> & Record<string, unknown>): IptvChannel {
     const id = this.getStringValue(raw['id']);
     const streamUrl = this.getStringValue(raw['stream_url']) || this.getStringValue(raw['url']);
 
     return {
       id,
-      num: (this.getNumberValue(raw['num']) ?? this.getNumberValue(raw['channel_number']) ?? Number(id)) || 0,
+      num: this.getValidChannelNumber(raw),
       nombre: this.getStringValue(raw['nombre']) || this.getStringValue(raw['title']) || '',
       logo: this.getStringValue(raw['logo']) || this.getStringValue(raw['image_url']) || '',
       grupo: this.getStringValue(raw['grupo']) || this.getStringValue(raw['group']) || '',
@@ -134,6 +148,16 @@ export class DataService {
     }
 
     return null;
+  }
+
+  private getPositiveIntegerValue(value: unknown): number | null {
+    const parsed = this.getNumberValue(value);
+
+    if (parsed === null || !Number.isInteger(parsed) || parsed <= 0) {
+      return null;
+    }
+
+    return parsed;
   }
 
   private getHeaders(): HttpHeaders {

@@ -134,6 +134,7 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
   private readonly DEFAULT_CAST_TEST_URL = 'https://devstreaming-cdn.apple.com/videos/streaming/examples/img_bipbop_adv_example_ts/master.m3u8';
   private currentPage = 1;
   private totalItems = 0;
+  private totalPages = 0;
   private isLoadingMore = false;
 
   private retryCount = 0;
@@ -415,7 +416,26 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
       return;
     }
 
+    if (!this.isValidPagedItemNumber(itemNum)) {
+      console.warn('Item sin numero paginable valido. Se omite carga por pagina estimada:', {
+        itemId: item.id,
+        itemNum
+      });
+      return;
+    }
+
     const estimatedPage = Math.ceil(itemNum / this.BATCH_SIZE);
+    const maxKnownPage = this.getKnownTotalPages();
+
+    if (maxKnownPage < 1 || estimatedPage > maxKnownPage) {
+      console.warn('Pagina estimada fuera del rango real. Se omite carga defensiva:', {
+        itemId: item.id,
+        itemNum,
+        estimatedPage,
+        maxKnownPage
+      });
+      return;
+    }
 
     console.log(`Item ${itemNum} no está cargado. Cargando página ${estimatedPage}...`);
 
@@ -425,7 +445,7 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
 
     if (!isNowLoaded) {
       console.warn(`Item ${itemNum} no encontrado en página ${estimatedPage}. Buscando en páginas cercanas...`);
-      for (let page = Math.max(1, estimatedPage - 2); page <= estimatedPage + 2; page++) {
+      for (let page = Math.max(1, estimatedPage - 2); page <= Math.min(maxKnownPage, estimatedPage + 2); page++) {
         if (page === estimatedPage) continue;
         await this.loadSpecificPage(page);
         if (this.allItems.some(i => i.id === item.id)) {
@@ -439,6 +459,13 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
   private loadSpecificPage(page: number): Promise<void> {
     return new Promise((resolve) => {
       if (this.isLoadingMore) {
+        resolve();
+        return;
+      }
+
+      const maxKnownPage = this.getKnownTotalPages();
+      if (page < 1 || (maxKnownPage > 0 && page > maxKnownPage)) {
+        console.warn('Se omite carga de pagina fuera de rango:', { page, maxKnownPage });
         resolve();
         return;
       }
@@ -459,6 +486,7 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
 
           this.currentPage = page;
           this.totalItems = response.total;
+          this.totalPages = this.resolveTotalPages(response);
           this.isLoadingMore = false;
           this.itemsLoaded = true;
 
@@ -495,6 +523,7 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
         next: (response: any) => {
           this.allItems = response.items;
           this.totalItems = response.total;
+          this.totalPages = this.resolveTotalPages(response);
           this.currentPage = 1;
           this.itemsLoaded = true;
           this.allItems.sort((a, b) => (a.num || 0) - (b.num || 0));
@@ -519,6 +548,34 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
     this.currentItemIndex = this.allItems.findIndex(
       i => i.id === this.currentItem!.id
     );
+  }
+
+  private isValidPagedItemNumber(value: number): boolean {
+    return Number.isInteger(value) && value > 0;
+  }
+
+  private getKnownTotalPages(): number {
+    if (this.totalPages > 0) {
+      return this.totalPages;
+    }
+
+    if (this.totalItems > 0) {
+      return Math.ceil(this.totalItems / this.BATCH_SIZE);
+    }
+
+    return 0;
+  }
+
+  private resolveTotalPages(response: PaginatedResponse<ContentItem>): number {
+    if (Number.isInteger(response.pages) && response.pages > 0) {
+      return response.pages;
+    }
+
+    if (response.total > 0) {
+      return Math.ceil(response.total / this.BATCH_SIZE);
+    }
+
+    return 0;
   }
 
   async nextItem(): Promise<void> {
