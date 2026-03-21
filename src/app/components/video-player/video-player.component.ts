@@ -611,6 +611,17 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
 
     await this.ensureItemIsLoaded(item);
 
+    if (this.contentType === 'channels' && !this.hasPlayableItemSource(item)) {
+      console.warn('[direct-player] setCurrentItem:missing-source-refetching-by-id', {
+        itemId: item.id,
+        itemName: item.nombre,
+        itemNum: item.num
+      });
+
+      this.loadChannelById(item.id, this.eventTitle || item.nombre);
+      return;
+    }
+
     this.loadStreamFromItem();
 
     if (this.itemsLoaded) {
@@ -779,6 +790,13 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
 
   private isValidPagedItemNumber(value: number): boolean {
     return Number.isInteger(value) && value > 0;
+  }
+
+  private hasPlayableItemSource(item: ContentItem): boolean {
+    const streamUrl = (item as Partial<IptvChannel>).stream_url;
+    const url = (item as Partial<IptvChannel>).url;
+
+    return !!streamUrl || !!url;
   }
 
   private getKnownTotalPages(): number {
