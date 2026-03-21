@@ -102,6 +102,40 @@ export class DataService {
   private authService = inject(AuthService);
   private cacheService = inject(CacheService);
 
+  private normalizeChannel(raw: Partial<IptvChannel> & Record<string, unknown>): IptvChannel {
+    const id = this.getStringValue(raw['id']);
+    const streamUrl = this.getStringValue(raw['stream_url']) || this.getStringValue(raw['url']);
+
+    return {
+      id,
+      num: (this.getNumberValue(raw['num']) ?? this.getNumberValue(raw['channel_number']) ?? Number(id)) || 0,
+      nombre: this.getStringValue(raw['nombre']) || this.getStringValue(raw['title']) || '',
+      logo: this.getStringValue(raw['logo']) || this.getStringValue(raw['image_url']) || '',
+      grupo: this.getStringValue(raw['grupo']) || this.getStringValue(raw['group']) || '',
+      country: this.getStringValue(raw['country']) || this.getStringValue(raw['language_label']) || '',
+      provider_id: this.getStringValue(raw['provider_id']) || id,
+      url: streamUrl,
+      stream_url: streamUrl
+    };
+  }
+
+  private getStringValue(value: unknown): string {
+    return typeof value === 'string' ? value : '';
+  }
+
+  private getNumberValue(value: unknown): number | null {
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return value;
+    }
+
+    if (typeof value === 'string' && value.trim()) {
+      const parsed = Number(value);
+      return Number.isFinite(parsed) ? parsed : null;
+    }
+
+    return null;
+  }
+
   private getHeaders(): HttpHeaders {
     const token = this.authService.getToken();
     return new HttpHeaders({
@@ -151,6 +185,10 @@ export class DataService {
       `${this.apiUrl}/api/content`,
       { headers: this.getHeaders(), params }
     ).pipe(
+      map(response => ({
+        ...response,
+        items: (response.items || []).map(item => this.normalizeChannel(item as Partial<IptvChannel> & Record<string, unknown>))
+      })),
       catchError(() => of({ total: 0, page, page_size: pageSize, pages: 0, has_next: false, has_prev: false, items: [] }))
     );
   }
@@ -160,6 +198,7 @@ export class DataService {
       `${this.apiUrl}/api/content/channels/${id}`,
       { headers: this.getHeaders() }
     ).pipe(
+      map(channel => this.normalizeChannel(channel as Partial<IptvChannel> & Record<string, unknown>)),
       catchError(() => of(null))
     );
   }
