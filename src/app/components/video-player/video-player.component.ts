@@ -348,9 +348,19 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
       this.showQualitySelector = false;
       this.updateQualitySelectors();
 
-      if (savedItem && slugify(savedItem.nombre) === slug) {
+      if (savedItem && slugify(savedItem.nombre) === slug && this.hasPlayableItemSource(savedItem)) {
         await this.setCurrentItem(savedItem);
         return;
+      }
+
+      if (savedItem && slugify(savedItem.nombre) === slug) {
+        console.warn('[direct-player] ngOnInit:ignoring-stale-saved-item', {
+          slug,
+          itemId: savedItem.id,
+          itemName: savedItem.nombre,
+          itemNum: savedItem.num,
+          itemUrl: (savedItem as Partial<IptvChannel>).stream_url || (savedItem as Partial<IptvChannel>).url
+        });
       }
 
       await this.findItemBySlug(slug);
@@ -610,17 +620,6 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
     }
 
     await this.ensureItemIsLoaded(item);
-
-    if (this.contentType === 'channels' && !this.hasPlayableItemSource(item)) {
-      console.warn('[direct-player] setCurrentItem:missing-source-refetching-by-id', {
-        itemId: item.id,
-        itemName: item.nombre,
-        itemNum: item.num
-      });
-
-      this.loadChannelById(item.id, this.eventTitle || item.nombre);
-      return;
-    }
 
     this.loadStreamFromItem();
 
