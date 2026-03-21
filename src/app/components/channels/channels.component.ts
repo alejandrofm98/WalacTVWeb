@@ -33,7 +33,7 @@ export class ChannelsComponent implements OnInit, AfterViewInit {
   channelsTotal = 0;
 
   channelsPage = 1;
-  limit = 40; // Reducido de 80 a 40 para carga más rápida
+  limit = 40;
 
   hasMoreChannels = true;
 
@@ -232,7 +232,8 @@ export class ChannelsComponent implements OnInit, AfterViewInit {
   onChannelClick(channel: IptvChannel) {
     this.playerState.clearEvent();
     this.playerState.setChannel(channel);
-    this.router.navigate(['/player', slugify(channel.nombre)]);
+    // ← Incluir el ID en la ruta para resolución directa sin búsqueda por texto
+    this.router.navigate(['/player', channel.id, slugify(channel.nombre)]);
   }
 
   getPosterUrl(item: IptvChannel): string {

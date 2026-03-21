@@ -18,7 +18,6 @@ import { PlayerStateService } from '../../services/player-state.service';
 import { DataService, IptvChannel } from '../../services/data.service';
 import { CalendarEvent, ChannelResolved } from '../../models/calendar.model';
 import { slugify } from '../../utils/slugify';
-
 import { SafeHtmlPipe } from '../../pipes/safe-html.pipe';
 
 export interface ChannelGroup {
@@ -50,7 +49,6 @@ export class EventsListComponent implements OnInit, AfterViewInit {
   selectedDate: string = '';
   totalEvents = 0;
 
-  // Filtros
   searchQuery = '';
   selectedCategory: string = '';
   categories: string[] = [];
@@ -62,7 +60,6 @@ export class EventsListComponent implements OnInit, AfterViewInit {
   showBackToTop = false;
 
   ngOnInit(): void {
-    // Establecer fecha de hoy por defecto
     this.selectedDate = new Date().toISOString().split('T')[0];
     this.scheduleLiveAutoScroll(this.selectedDate);
     this.loadEvents();
@@ -97,25 +94,19 @@ export class EventsListComponent implements OnInit, AfterViewInit {
   private extractCategories(): void {
     const catSet = new Set<string>();
     this.events.forEach(event => {
-      if (event.categoria) {
-        catSet.add(event.categoria);
-      }
+      if (event.categoria) catSet.add(event.categoria);
     });
     this.categories = Array.from(catSet).sort();
   }
 
   onDateChange(date: string): void {
-    // Validar rango permitido
     const selected = new Date(date);
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    
-    const diffTime = selected.getTime() - today.getTime();
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
 
-    // Permitir solo -1 (ayer), 0 (hoy), +1 (mañana)
+    const diffDays = Math.ceil((selected.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+
     if (diffDays < -1 || diffDays > 1) {
-      // Si está fuera de rango, volver a hoy
       this.goToToday();
       return;
     }
@@ -154,10 +145,6 @@ export class EventsListComponent implements OnInit, AfterViewInit {
     today.setHours(0, 0, 0, 0);
     const selected = new Date(this.selectedDate);
     selected.setHours(0, 0, 0, 0);
-    
-    // Permitir ir atrás si la fecha seleccionada es >= hoy
-    // Es decir, si estoy en Hoy puedo ir a Ayer. Si estoy en Mañana puedo ir a Hoy.
-    // Si estoy en Ayer, NO puedo ir más atrás.
     return selected > new Date(today.setDate(today.getDate() - 1));
   }
 
@@ -166,17 +153,12 @@ export class EventsListComponent implements OnInit, AfterViewInit {
     today.setHours(0, 0, 0, 0);
     const selected = new Date(this.selectedDate);
     selected.setHours(0, 0, 0, 0);
-    
-    // Permitir ir adelante si la fecha seleccionada es <= hoy
-    // Si estoy en Hoy puedo ir a Mañana. Si estoy en Ayer puedo ir a Hoy.
-    // Si estoy en Mañana, NO puedo ir más adelante.
     return selected < new Date(today.setDate(today.getDate() + 1));
   }
 
   get filteredEvents(): CalendarEvent[] {
     let filtered = this.events;
 
-    // Filtrar por búsqueda
     if (this.searchQuery.trim()) {
       const query = this.searchQuery.toLowerCase();
       filtered = filtered.filter(event =>
@@ -186,14 +168,10 @@ export class EventsListComponent implements OnInit, AfterViewInit {
       );
     }
 
-    // Filtrar por categoría/deporte
     if (this.selectedCategory) {
-      filtered = filtered.filter(event =>
-        event.categoria === this.selectedCategory
-      );
+      filtered = filtered.filter(event => event.categoria === this.selectedCategory);
     }
 
-    // Ordenar por hora
     return filtered.sort((a, b) => a.hora.localeCompare(b.hora));
   }
 
@@ -215,27 +193,20 @@ export class EventsListComponent implements OnInit, AfterViewInit {
 
   get formattedDate(): string {
     const date = new Date(this.selectedDate);
-    const options: Intl.DateTimeFormatOptions = {
-      weekday: 'long',
-      day: 'numeric',
-      month: 'long'
-    };
+    const options: Intl.DateTimeFormatOptions = { weekday: 'long', day: 'numeric', month: 'long' };
     return date.toLocaleDateString('es-ES', options);
   }
 
   isToday(): boolean {
-    const today = new Date().toISOString().split('T')[0];
-    return this.selectedDate === today;
+    return this.selectedDate === new Date().toISOString().split('T')[0];
   }
 
   isLive(event: CalendarEvent): boolean {
     if (!this.isToday()) return false;
-    
     const now = new Date();
     const [hours, minutes] = event.hora.split(':').map(Number);
     const eventTime = new Date();
     eventTime.setHours(hours, minutes, 0, 0);
-    
     return now >= eventTime;
   }
 
@@ -245,39 +216,37 @@ export class EventsListComponent implements OnInit, AfterViewInit {
       today.setHours(0, 0, 0, 0);
       const selected = new Date(this.selectedDate);
       selected.setHours(0, 0, 0, 0);
-      
-      if (selected < today) return 'past';
-      return 'upcoming';
+      return selected < today ? 'past' : 'upcoming';
     }
-    
+
     const now = new Date();
     const [hours, minutes] = event.hora.split(':').map(Number);
     const eventTime = new Date();
     eventTime.setHours(hours, minutes, 0, 0);
-    
-    if (now >= eventTime) return 'live';
-    return 'upcoming';
+    return now >= eventTime ? 'live' : 'upcoming';
   }
 
   onChannelClick(channel: ChannelResolved, groupChannels?: ChannelResolved[], eventTitle?: string): void {
     const channelsToUse = groupChannels || [channel];
-    // Ya no anulamos el canal seleccionado buscando el de prioridad 0 global.
-    // Usamos el canal que el usuario haya seleccionado (que será el primero del grupo que haya clickado).
-    const targetChannel = channel;
-    const eventSlug = eventTitle ? slugify(eventTitle) : '';
-    
-    this.dataService.getChannel(targetChannel.channel_id).subscribe({
+
+    this.dataService.getChannel(channel.channel_id).subscribe({
       next: (iptvChannel) => {
-        if (iptvChannel) {
-          this.playerState.setChannel(iptvChannel);
-          this.playerState.setEventChannels(channelsToUse);
-          this.playerState.setEventTitle(eventTitle || '');
-          this.playerState.setSelectedChannelId(targetChannel.channel_id);
-          const navigateSlug = eventSlug || slugify(iptvChannel.nombre);
-          this.router.navigate(['/player', navigateSlug]);
-        } else {
-          console.error('Canal no encontrado:', targetChannel.channel_id);
+        if (!iptvChannel) {
+          console.error('Canal no encontrado:', channel.channel_id);
+          return;
         }
+
+        // Guardar todo el contexto del evento en playerState
+        this.playerState.setChannel(iptvChannel);
+        this.playerState.setEventChannels(channelsToUse);
+        this.playerState.setEventTitle(eventTitle || '');
+        this.playerState.setSelectedChannelId(channel.channel_id);
+
+        // La URL usa el channel_id como :id y el slug del EVENTO como :slug
+        // Así el player puede recuperar el canal por ID directamente,
+        // y el contexto del evento (calidad, canales alternativos) viene del playerState
+        const slug = eventTitle ? slugify(eventTitle) : slugify(iptvChannel.nombre);
+        this.router.navigate(['/player', channel.channel_id, slug]);
       },
       error: (err) => {
         console.error('Error al obtener canal:', err);
@@ -297,9 +266,7 @@ export class EventsListComponent implements OnInit, AfterViewInit {
     if (this.isCategoryOpen) {
       this.categorySearch = '';
       this.highlightedCategoryIndex = -1;
-      setTimeout(() => {
-        this.categorySearchInput?.nativeElement?.focus();
-      }, 50);
+      setTimeout(() => this.categorySearchInput?.nativeElement?.focus(), 50);
     }
   }
 
@@ -345,9 +312,7 @@ export class EventsListComponent implements OnInit, AfterViewInit {
   }
 
   private scrollToLatestLiveEventIfNeeded(): void {
-    if (!this.shouldAutoScrollToLive || this.hasAutoScrolledToLive || !this.isToday()) {
-      return;
-    }
+    if (!this.shouldAutoScrollToLive || this.hasAutoScrolledToLive || !this.isToday()) return;
 
     const latestLiveIndex = this.filteredEvents.reduce((lastLiveIndex, event, index) => {
       return this.getLiveStatus(event) === 'live' ? index : lastLiveIndex;
@@ -359,9 +324,7 @@ export class EventsListComponent implements OnInit, AfterViewInit {
     }
 
     const targetCard = this.eventCards.get(latestLiveIndex)?.nativeElement;
-    if (!targetCard) {
-      return;
-    }
+    if (!targetCard) return;
 
     targetCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
     this.hasAutoScrolledToLive = true;
@@ -372,10 +335,9 @@ export class EventsListComponent implements OnInit, AfterViewInit {
     if (date === this.getTodayDateString()) {
       this.shouldAutoScrollToLive = true;
       this.hasAutoScrolledToLive = false;
-      return;
+    } else {
+      this.shouldAutoScrollToLive = false;
     }
-
-    this.shouldAutoScrollToLive = false;
   }
 
   private getTodayDateString(): string {
@@ -387,63 +349,49 @@ export class EventsListComponent implements OnInit, AfterViewInit {
   }
 
   get filteredCategories(): string[] {
-    if (!this.categorySearch.trim()) {
-      return this.categories;
-    }
+    if (!this.categorySearch.trim()) return this.categories;
     const search = this.categorySearch.toLowerCase();
     return this.categories.filter(cat => cat.toLowerCase().includes(search));
   }
 
   getSportIcon(categoria: string | null): string {
     if (!categoria) return this.getIconDefault();
-    
+
     const cat = categoria.toLowerCase();
-    
-    // Fútbol - Clean soccer ball
+
     if (cat.includes('fútbol') || cat.includes('futbol') || cat.includes('soccer')) {
       return `<svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="#cbd5e1" stroke-width="1.5"/><path d="M12 2a10 10 0 0 1 0 20" fill="none"/><polygon points="12,7 14.5,9 13.5,12 10.5,12 9.5,9" fill="#cbd5e1"/><line x1="12" y1="7" x2="12" y2="2" stroke="#cbd5e1" stroke-width="1.2"/><line x1="14.5" y1="9" x2="19" y2="5.5" stroke="#cbd5e1" stroke-width="1.2"/><line x1="13.5" y1="12" x2="18.5" y2="14" stroke="#cbd5e1" stroke-width="1.2"/><line x1="10.5" y1="12" x2="5.5" y2="14" stroke="#cbd5e1" stroke-width="1.2"/><line x1="9.5" y1="9" x2="5" y2="5.5" stroke="#cbd5e1" stroke-width="1.2"/></svg>`;
     }
-    // Baloncesto
     if (cat.includes('baloncesto') || cat.includes('basket') || cat.includes('nba')) {
       return `<svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="#fb923c" stroke-width="1.5"/><path d="M12 2v20" stroke="#fb923c" stroke-width="1.2"/><path d="M2 12h20" stroke="#fb923c" stroke-width="1.2"/><path d="M4.5 4.5c4 3 4 7.5 0 15" stroke="#fb923c" stroke-width="1.2" fill="none"/><path d="M19.5 4.5c-4 3-4 7.5 0 15" stroke="#fb923c" stroke-width="1.2" fill="none"/></svg>`;
     }
-    // Tenis
     if (cat.includes('tenis') && !cat.includes('mesa')) {
       return `<svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="#a3e635" stroke-width="1.5"/><path d="M6 3.5c3 4 3 13 0 17" stroke="#a3e635" stroke-width="1.3" fill="none"/><path d="M18 3.5c-3 4-3 13 0 17" stroke="#a3e635" stroke-width="1.3" fill="none"/></svg>`;
     }
-    // F1/Motor - Steering wheel
     if (cat.includes('motor') || cat.includes('f1') || cat.includes('formula') || cat.includes('rally') || cat.includes('automovilismo')) {
       return `<svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="#f87171" stroke-width="1.5"/><circle cx="12" cy="12" r="3" stroke="#f87171" stroke-width="1.5"/><path d="M12 9V3" stroke="#f87171" stroke-width="1.5" stroke-linecap="round"/><path d="M9.4 13.5L4.2 16.5" stroke="#f87171" stroke-width="1.5" stroke-linecap="round"/><path d="M14.6 13.5L19.8 16.5" stroke="#f87171" stroke-width="1.5" stroke-linecap="round"/></svg>`;
     }
-    // Ciclismo
     if (cat.includes('ciclismo')) {
       return `<svg viewBox="0 0 24 24" fill="none"><circle cx="7" cy="16" r="4" stroke="#38bdf8" stroke-width="1.5"/><circle cx="17" cy="16" r="4" stroke="#38bdf8" stroke-width="1.5"/><path d="M7 16l4-9h3l3 9" stroke="#38bdf8" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/><path d="M11 7L9 5H7" stroke="#38bdf8" stroke-width="1.5" stroke-linecap="round"/></svg>`;
     }
-    // Golf
     if (cat.includes('golf')) {
       return `<svg viewBox="0 0 24 24" fill="none"><path d="M12 18V4l7 4-7 3" stroke="#4ade80" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/><path d="M8 21c0-2 4-3 4-3s4 1 4 3" stroke="#4ade80" stroke-width="1.5" stroke-linecap="round" fill="none"/></svg>`;
     }
-    // Pádel
     if (cat.includes('pádel') || cat.includes('padel')) {
       return `<svg viewBox="0 0 24 24" fill="none"><ellipse cx="12" cy="9" rx="5" ry="7" stroke="#84cc16" stroke-width="1.5" fill="none"/><circle cx="10" cy="7" r="0.8" fill="#84cc16"/><circle cx="14" cy="7" r="0.8" fill="#84cc16"/><circle cx="12" cy="10" r="0.8" fill="#84cc16"/><circle cx="10" cy="12" r="0.8" fill="#84cc16"/><circle cx="14" cy="12" r="0.8" fill="#84cc16"/><path d="M12 16v5" stroke="#84cc16" stroke-width="1.5" stroke-linecap="round"/></svg>`;
     }
-    // Balonmano
     if (cat.includes('balonmano') || cat.includes('handball')) {
       return `<svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="#c084fc" stroke-width="1.5"/><path d="M7 5c3 5 3 9 0 14" stroke="#c084fc" stroke-width="1.2" fill="none"/><path d="M12 3c1 5 1 11 0 18" stroke="#c084fc" stroke-width="1.2" fill="none"/><path d="M17 5c-3 5-3 9 0 14" stroke="#c084fc" stroke-width="1.2" fill="none"/></svg>`;
     }
-    // Rugby
     if (cat.includes('rugby')) {
       return `<svg viewBox="0 0 24 24" fill="none"><ellipse cx="12" cy="12" rx="9" ry="6" transform="rotate(-30 12 12)" stroke="#f59e0b" stroke-width="1.5" fill="none"/><path d="M7 17L17 7" stroke="#f59e0b" stroke-width="1.2"/><path d="M9.5 12l2-2m1 3l2-2" stroke="#f59e0b" stroke-width="1.2" stroke-linecap="round"/></svg>`;
     }
-    // Boxeo / MMA
     if (cat.includes('boxeo') || cat.includes('mma') || cat.includes('ufc')) {
       return `<svg viewBox="0 0 24 24" fill="none"><path d="M5 13V9a4 4 0 0 1 4-4h1a2 2 0 0 1 2 2v5a3 3 0 0 1-3 3H7a2 2 0 0 1-2-2z" stroke="#ef4444" stroke-width="1.5" fill="none"/><path d="M12 12h2a3 3 0 0 0 3-3V8" stroke="#ef4444" stroke-width="1.5" stroke-linecap="round" fill="none"/><path d="M8 19v2m4-2v2" stroke="#ef4444" stroke-width="1.5" stroke-linecap="round"/></svg>`;
     }
-    // Natación
     if (cat.includes('natación') || cat.includes('natacion') || cat.includes('swimming')) {
       return `<svg viewBox="0 0 24 24" fill="none"><path d="M2 18c1.5-1 3-1 4.5 0s3 1 4.5 0 3-1 4.5 0 3 1 4.5 0" stroke="#06b6d4" stroke-width="1.5" stroke-linecap="round" fill="none"/><path d="M2 14c1.5-1 3-1 4.5 0s3 1 4.5 0 3-1 4.5 0 3 1 4.5 0" stroke="#06b6d4" stroke-width="1.5" stroke-linecap="round" fill="none"/><circle cx="8" cy="8" r="2" stroke="#06b6d4" stroke-width="1.5" fill="none"/><path d="M10 8l4 3" stroke="#06b6d4" stroke-width="1.5" stroke-linecap="round"/></svg>`;
     }
-    // Hockey
     if (cat.includes('hockey')) {
       return `<svg viewBox="0 0 24 24" fill="none"><path d="M4 20L14 4" stroke="#64748b" stroke-width="2" stroke-linecap="round"/><path d="M14 4c2 0 4 1 5 3" stroke="#64748b" stroke-width="2" stroke-linecap="round" fill="none"/><circle cx="17" cy="18" r="2" stroke="#64748b" stroke-width="1.5" fill="none"/></svg>`;
     }
@@ -476,12 +424,10 @@ export class EventsListComponent implements OnInit, AfterViewInit {
     if (!channels || channels.length === 0) return [];
 
     const grouped = new Map<string, ChannelResolved[]>();
-    
+
     channels.forEach(channel => {
       const key = channel.display_name;
-      if (!grouped.has(key)) {
-        grouped.set(key, []);
-      }
+      if (!grouped.has(key)) grouped.set(key, []);
       grouped.get(key)!.push(channel);
     });
 
@@ -500,14 +446,9 @@ export class EventsListComponent implements OnInit, AfterViewInit {
 
   getFirstPriorityZeroChannel(channels: ChannelResolved[]): ChannelResolved | null {
     if (!channels || channels.length === 0) return null;
-    
     const priorityZero = channels.filter(c => c.priority === 0);
-    if (priorityZero.length > 0) {
-      return priorityZero[0];
-    }
-    
-    const sorted = [...channels].sort((a, b) => a.priority - b.priority);
-    return sorted[0];
+    if (priorityZero.length > 0) return priorityZero[0];
+    return [...channels].sort((a, b) => a.priority - b.priority)[0];
   }
 
   @HostListener('document:click', ['$event'])

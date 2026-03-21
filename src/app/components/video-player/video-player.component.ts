@@ -275,26 +275,30 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
     this.contentType = this.playerState.getContentType();
 
     this.route.paramMap.subscribe(async params => {
-      const slug = params.get('title');
-      if (!slug) return;
+      const id = params.get('id');
+      const slug = params.get('slug');
 
-      const savedItem = this.playerState.getCurrentItem();
+      if (!id && !slug) return;
+
       const savedEventTitle = this.playerState.getEventTitle();
       const savedEventChannels = this.playerState.getEventChannels();
       const savedSelectedChannelId = this.playerState.getSelectedChannelId();
 
       console.log('Recuperando estado:', {
+        id,
         slug,
         savedEventTitle,
         channelsCount: savedEventChannels.length,
         selectedChannelId: savedSelectedChannelId
       });
 
-      if (savedEventTitle && savedEventChannels.length > 0) {
-        const savedSlug = slugify(savedEventTitle);
-        const isEventMatch = savedSlug === slug || slug.includes(savedSlug) || savedSlug.includes(slug);
+      // ── CASO EVENTO: hay evento guardado y el id pertenece a uno de sus canales ──
+      if (id && savedEventTitle && savedEventChannels.length > 0) {
+        const isEventChannel = savedEventChannels.some(
+          c => String(c.channel_id) === String(id)
+        );
 
-        if (isEventMatch) {
+        if (isEventChannel) {
           console.log('Recuperando evento guardado:', savedEventTitle);
           this.eventChannels = savedEventChannels;
           this.eventTitle = savedEventTitle;
@@ -303,32 +307,24 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
           let initialChannel: ChannelResolved | undefined;
 
           if (savedSelectedChannelId) {
-            initialChannel = this.eventChannels.find(
+            initialChannel = savedEventChannels.find(
               c => String(c.channel_id) === String(savedSelectedChannelId)
-            );
-            console.log('Buscando canal por selectedChannelId:', savedSelectedChannelId, '-> encontrado:', !!initialChannel);
-          }
-
-          if (!initialChannel && savedItem && savedItem.id) {
-            initialChannel = this.eventChannels.find(
-              c => String(c.channel_id) === String(savedItem.id)
             );
           }
 
           if (!initialChannel) {
-            const priorityZero = this.eventChannels.find(c => c.priority === 0);
-            initialChannel = priorityZero || this.eventChannels[0];
+            initialChannel = savedEventChannels.find(c => c.priority === 0) || savedEventChannels[0];
           }
 
           if (initialChannel) {
             this.selectedEventChannel = initialChannel;
             this.showQualitySelector = true;
 
-            const canReuseSavedItem = !!savedItem &&
-              !!savedItem.id &&
+            const savedItem = this.playerState.getCurrentItem();
+            const canReuse = savedItem &&
               String(savedItem.id) === String(initialChannel.channel_id);
 
-            if (canReuseSavedItem) {
+            if (canReuse) {
               this.currentItem = savedItem;
               this.isChannelMode = true;
               this.eventTitle = savedEventTitle;
@@ -342,30 +338,56 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
         }
       }
 
-      this.eventChannels = [];
-      this.eventTitle = '';
-      this.selectedEventChannel = null;
-      this.showQualitySelector = false;
-      this.updateQualitySelectors();
-
-      if (savedItem && slugify(savedItem.nombre) === slug && this.hasPlayableItemSource(savedItem)) {
-        await this.setCurrentItem(savedItem);
+      // ── CASO NORMAL: resolver por ID directamente ──
+      if (id) {
+        await this.loadItemById(id);
         return;
       }
 
-      if (savedItem && slugify(savedItem.nombre) === slug) {
-        console.warn('[direct-player] ngOnInit:ignoring-stale-saved-item', {
-          slug,
-          itemId: savedItem.id,
-          itemName: savedItem.nombre,
-          itemNum: savedItem.num,
-          itemUrl: (savedItem as Partial<IptvChannel>).stream_url || (savedItem as Partial<IptvChannel>).url
-        });
+      // ── FALLBACK: solo hay slug (URLs antiguas sin id) ──
+      if (slug) {
+        await this.findItemBySlug(slug);
       }
-
-      await this.findItemBySlug(slug);
     });
   }
+
+  // ── Resolución directa por ID ─────────────────────────────────────────────
+
+  private async loadItemById(id: string): Promise<void> {
+    // 1. Reutilizar desde playerState si coincide (navegación normal, sin HTTP)
+    const savedItem = this.playerState.getCurrentItem();
+    if (savedItem && String(savedItem.id) === String(id)) {
+      console.log('[direct-player] Item recuperado desde playerState:', savedItem.nombre);
+      await this.setCurrentItem(savedItem);
+      return;
+    }
+
+    // 2. URL directa o item no coincide → llamar a /api/content/channels/:id
+    this.isStreamLoading = true;
+    this.cdr.markForCheck();
+
+    try {
+      const item = await firstValueFrom(this.dataService.getChannel(id));
+      if (item) {
+        console.log('[direct-player] Item cargado por ID:', item.nombre);
+        await this.setCurrentItem(item);
+      } else {
+        console.warn('[direct-player] Canal no encontrado por ID:', id);
+        this.hasError = true;
+        this.errorMessage = 'Canal no encontrado';
+        this.isStreamLoading = false;
+        this.cdr.markForCheck();
+      }
+    } catch (err) {
+      console.error('[direct-player] Error cargando canal por ID:', err);
+      this.hasError = true;
+      this.errorMessage = 'Error al cargar el canal';
+      this.isStreamLoading = false;
+      this.cdr.markForCheck();
+    }
+  }
+
+  // ── Búsqueda por slug (fallback para URLs antiguas) ───────────────────────
 
   private async findItemBySlug(slug: string): Promise<void> {
     console.log('[direct-player] findItemBySlug:start', {
@@ -379,52 +401,22 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
 
     if (!this.itemsLoaded) {
       await this.loadInitialItems();
-
-      console.log('[direct-player] findItemBySlug:after-initial-load', {
-        slug,
-        itemsLoaded: this.itemsLoaded,
-        allItemsCount: this.allItems.length,
-        totalItems: this.totalItems,
-        totalPages: this.totalPages
-      });
     }
 
     const matchedEvent = await this.findEventBySlug(slug);
 
     if (matchedEvent) {
-      console.log('[direct-player] findItemBySlug:event-match', {
-        slug,
-        eventId: matchedEvent.id,
-        eventTitle: matchedEvent.equipos,
-        channelsCount: matchedEvent.canales_resueltos.length
-      });
-
       this.loadEventFromRoute(matchedEvent);
       return;
     }
 
     let foundItem = this.findMatchingItem(slug);
 
-    console.log('[direct-player] findItemBySlug:local-match', {
-      slug,
-      found: !!foundItem,
-      itemId: foundItem?.id,
-      itemName: foundItem?.nombre,
-      itemNum: foundItem?.num
-    });
-
     if (!foundItem) {
       foundItem = await this.findItemBySearch(slug);
     }
 
     if (foundItem) {
-      console.log('[direct-player] findItemBySlug:resolved-item', {
-        slug,
-        itemId: foundItem.id,
-        itemName: foundItem.nombre,
-        itemNum: foundItem.num
-      });
-
       await this.setCurrentItem(foundItem);
       return;
     }
@@ -443,37 +435,12 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
   private async findItemBySearch(slug: string): Promise<ContentItem | undefined> {
     const searchQueries = this.buildSlugSearchQueries(slug);
 
-    console.log('[direct-player] findItemBySearch:queries', {
-      slug,
-      searchQueries
-    });
-
     for (const searchQuery of searchQueries) {
       const response = await firstValueFrom(
         this.dataService.getChannels(1, this.BATCH_SIZE, undefined, undefined, searchQuery)
       );
 
-      console.log('[direct-player] findItemBySearch:response', {
-        slug,
-        searchQuery,
-        responsePage: response.page,
-        responseTotal: response.total,
-        responsePages: response.pages,
-        itemsCount: response.items.length,
-        firstItemName: response.items[0]?.nombre,
-        firstItemId: response.items[0]?.id
-      });
-
       const matchedItem = response.items.find(item => this.matchesSlugCandidate(slugify(item.nombre), slug));
-
-      console.log('[direct-player] findItemBySearch:match-check', {
-        slug,
-        searchQuery,
-        found: !!matchedItem,
-        itemId: matchedItem?.id,
-        itemName: matchedItem?.nombre,
-        itemNum: matchedItem?.num
-      });
 
       if (matchedItem) {
         this.allItems = response.items;
@@ -492,13 +459,46 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
   private buildSlugSearchQueries(slug: string): string[] {
     const normalized = slug.replace(/-/g, ' ').trim();
     const words = normalized.split(/\s+/).filter(Boolean);
-    const candidateQueries: string[] = [normalized];
+    const trimmedWords = this.trimSearchNoiseWords(words);
+    const preferredWords = trimmedWords.length >= 3 ? trimmedWords : words;
+    const candidateQueries: string[] = [
+      normalized,
+      preferredWords.slice(0, 3).join(' '),
+      preferredWords.slice(0, 4).join(' '),
+      preferredWords.slice(0, 5).join(' '),
+      preferredWords.join(' ')
+    ];
 
-    for (let size = words.length - 1; size >= 2; size--) {
-      candidateQueries.push(words.slice(0, size).join(' '));
+    for (let size = preferredWords.length - 1; size >= 2; size--) {
+      candidateQueries.push(preferredWords.slice(0, size).join(' '));
     }
 
     return Array.from(new Set(candidateQueries.filter(Boolean)));
+  }
+
+  private trimSearchNoiseWords(words: string[]): string[] {
+    const noiseTokens = new Set([
+      'am', 'pm',
+      'jan', 'feb', 'mar', 'apr', 'may', 'jun',
+      'jul', 'aug', 'sep', 'oct', 'nov', 'dec'
+    ]);
+
+    const trimmed = [...words];
+
+    while (trimmed.length > 3) {
+      const lastWord = trimmed[trimmed.length - 1];
+      const isNumeric = /^\d+$/.test(lastWord);
+      const isNoiseToken = noiseTokens.has(lastWord);
+      const isShortSuffix = lastWord.length <= 2;
+
+      if (!isNumeric && !isNoiseToken && !isShortSuffix) {
+        break;
+      }
+
+      trimmed.pop();
+    }
+
+    return trimmed;
   }
 
   private matchesSlugCandidate(candidateSlug: string, routeSlug: string): boolean {
@@ -507,10 +507,6 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
 
   private async findEventBySlug(slug: string): Promise<CalendarEvent | null> {
     const candidateDates = this.getCandidateEventDates();
-    console.log('[direct-player] findEventBySlug:start', {
-      slug,
-      candidateDates
-    });
 
     const responses = await Promise.all(
       candidateDates.map(date => firstValueFrom(this.calendarService.getEventsByDate(date)))
@@ -518,23 +514,7 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
 
     const events = responses.flatMap(response => response.eventos || []);
 
-    console.log('[direct-player] findEventBySlug:responses', {
-      slug,
-      dates: candidateDates,
-      totals: responses.map(response => response.total_eventos || response.eventos?.length || 0),
-      combinedEvents: events.length
-    });
-
-    const matchedEvent = events.find(event => this.matchesEventSlug(event, slug)) || null;
-
-    console.log('[direct-player] findEventBySlug:result', {
-      slug,
-      found: !!matchedEvent,
-      eventId: matchedEvent?.id,
-      eventTitle: matchedEvent?.equipos
-    });
-
-    return matchedEvent;
+    return events.find(event => this.matchesEventSlug(event, slug)) || null;
   }
 
   private getCandidateEventDates(): string[] {
@@ -566,12 +546,6 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
       console.warn('Evento encontrado sin canales resueltos:', event.id);
       return;
     }
-
-    console.log('[direct-player] loadEventFromRoute', {
-      eventId: event.id,
-      eventTitle: event.equipos,
-      channelsCount: event.canales_resueltos.length
-    });
 
     this.eventChannels = event.canales_resueltos;
     this.eventTitle = event.equipos;
@@ -635,7 +609,6 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
     const isLoaded = this.allItems.some(i => i.id === item.id);
 
     if (isLoaded) {
-      console.log('Item ya cargado:', itemNum);
       return;
     }
 
@@ -660,19 +633,15 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
       return;
     }
 
-    console.log(`Item ${itemNum} no está cargado. Cargando página ${estimatedPage}...`);
-
     await this.loadSpecificPage(estimatedPage);
 
     const isNowLoaded = this.allItems.some(i => i.id === item.id);
 
     if (!isNowLoaded) {
-      console.warn(`Item ${itemNum} no encontrado en página ${estimatedPage}. Buscando en páginas cercanas...`);
       for (let page = Math.max(1, estimatedPage - 2); page <= Math.min(maxKnownPage, estimatedPage + 2); page++) {
         if (page === estimatedPage) continue;
         await this.loadSpecificPage(page);
         if (this.allItems.some(i => i.id === item.id)) {
-          console.log(`Item ${itemNum} encontrado en página ${page}`);
           break;
         }
       }
@@ -688,7 +657,6 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
 
       const maxKnownPage = this.getKnownTotalPages();
       if (page < 1 || (maxKnownPage > 0 && page > maxKnownPage)) {
-        console.warn('Se omite carga de pagina fuera de rango:', { page, maxKnownPage });
         resolve();
         return;
       }
@@ -713,7 +681,6 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
           this.isLoadingMore = false;
           this.itemsLoaded = true;
 
-          console.log(`Página ${page} cargada. Total items en memoria: ${this.allItems.length}`);
           resolve();
         },
         error: (error: any) => {
@@ -1028,8 +995,9 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
       this.playerState.setSeries(item as IptvSeries);
     }
 
+    // ← Incluir el ID en la ruta para resolución directa
     const slug = slugify(item.nombre);
-    this.router.navigate(['/player', slug], {replaceUrl: true});
+    this.router.navigate(['/player', item.id, slug], { replaceUrl: true });
 
     this.showChannelOverlay = true;
     if (this.hideChannelOverlayTimeout) {
@@ -1290,7 +1258,10 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
 
     const credentials = this.getStoredCredentials();
     if (!credentials) {
-      console.error('No hay credenciales guardadas');
+      this.hasError = true;
+      this.errorMessage = 'Sesión expirada. Por favor, inicia sesión de nuevo.';
+      this.isStreamLoading = false;
+      this.cdr.markForCheck();
       return;
     }
 
@@ -1335,15 +1306,6 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
 
     this.dataService.getChannel(channelId).subscribe({
       next: (iptvChannel) => {
-        console.log('[direct-player] loadChannelById:response', {
-          channelId,
-          found: !!iptvChannel,
-          eventTitle,
-          itemName: iptvChannel?.nombre,
-          itemNum: iptvChannel?.num,
-          itemUrl: iptvChannel?.stream_url || iptvChannel?.url
-        });
-
         if (!iptvChannel) {
           console.error('Canal no encontrado:', channelId);
           return;
@@ -1402,14 +1364,12 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
 
     const baseUrl = 'https://iptv.walerike.com';
     if (originalUrl.startsWith(baseUrl)) {
-      console.log('📌 URL ya está proxiada:', originalUrl);
       return originalUrl;
     }
 
     const parts = originalUrl.split('/');
     const lastPart = parts[parts.length - 1];
 
-    // ✅ Usar currentExtension si está definida, o extraer de URL
     let extension = this.currentExtension;
     if (!extension) {
       const extMatch = lastPart.match(/\.(ts|m3u8|mp4|mkv|avi)$/i);
@@ -1443,7 +1403,7 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   ngAfterViewInit() {
-    if (this.shouldInitializePlayer) {
+    if (this.shouldInitializePlayer && this.streamUrl) {
       setTimeout(() => this.initializePlayer(true), 0);
     }
 
@@ -1510,49 +1470,19 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
       return;
     }
 
-    if (this.boundPlayHandler) {
-      video.removeEventListener('play', this.boundPlayHandler);
-    }
-    if (this.boundPlayingHandler) {
-      video.removeEventListener('playing', this.boundPlayingHandler);
-    }
-    if (this.boundPauseHandler) {
-      video.removeEventListener('pause', this.boundPauseHandler);
-    }
-    if (this.boundVolumeChangeHandler) {
-      video.removeEventListener('volumechange', this.boundVolumeChangeHandler);
-    }
-    if (this.boundWaitingHandler) {
-      video.removeEventListener('waiting', this.boundWaitingHandler);
-    }
-    if (this.boundCanPlayHandler) {
-      video.removeEventListener('canplay', this.boundCanPlayHandler);
-    }
-    if (this.boundCoreLoadedDataHandler) {
-      video.removeEventListener('loadeddata', this.boundCoreLoadedDataHandler);
-    }
-    if (this.boundVideoErrorHandler) {
-      video.removeEventListener('error', this.boundVideoErrorHandler);
-    }
-
-    if (this.boundTimeUpdateHandler || this.boundProgressHandler ||
-      this.boundLoadedMetadataHandler || this.boundSeekedHandler || this.boundSeekingHandler) {
-      if (this.boundTimeUpdateHandler) {
-        video.removeEventListener('timeupdate', this.boundTimeUpdateHandler);
-      }
-      if (this.boundProgressHandler) {
-        video.removeEventListener('progress', this.boundProgressHandler);
-      }
-      if (this.boundLoadedMetadataHandler) {
-        video.removeEventListener('loadedmetadata', this.boundLoadedMetadataHandler);
-      }
-      if (this.boundSeekedHandler) {
-        video.removeEventListener('seeked', this.boundSeekedHandler);
-      }
-      if (this.boundSeekingHandler) {
-        video.removeEventListener('seeking', this.boundSeekingHandler);
-      }
-    }
+    if (this.boundPlayHandler) video.removeEventListener('play', this.boundPlayHandler);
+    if (this.boundPlayingHandler) video.removeEventListener('playing', this.boundPlayingHandler);
+    if (this.boundPauseHandler) video.removeEventListener('pause', this.boundPauseHandler);
+    if (this.boundVolumeChangeHandler) video.removeEventListener('volumechange', this.boundVolumeChangeHandler);
+    if (this.boundWaitingHandler) video.removeEventListener('waiting', this.boundWaitingHandler);
+    if (this.boundCanPlayHandler) video.removeEventListener('canplay', this.boundCanPlayHandler);
+    if (this.boundCoreLoadedDataHandler) video.removeEventListener('loadeddata', this.boundCoreLoadedDataHandler);
+    if (this.boundVideoErrorHandler) video.removeEventListener('error', this.boundVideoErrorHandler);
+    if (this.boundTimeUpdateHandler) video.removeEventListener('timeupdate', this.boundTimeUpdateHandler);
+    if (this.boundProgressHandler) video.removeEventListener('progress', this.boundProgressHandler);
+    if (this.boundLoadedMetadataHandler) video.removeEventListener('loadedmetadata', this.boundLoadedMetadataHandler);
+    if (this.boundSeekedHandler) video.removeEventListener('seeked', this.boundSeekedHandler);
+    if (this.boundSeekingHandler) video.removeEventListener('seeking', this.boundSeekingHandler);
 
     this.progressListenersAttached = false;
     this.coreVideoListenersAttached = false;
@@ -1610,8 +1540,7 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
         if (typeof pos === 'number' && Number.isFinite(pos)) {
           try {
             video.currentTime = pos;
-          } catch (_) {
-          }
+          } catch (_) {}
         }
         this.triggerSoftLiveRecovery('startup watchdog sin primer frame', video);
       }
@@ -1635,7 +1564,6 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
       return;
     }
 
-    // Si ya agotamos soft recoveries, hacer reload completo
     if (this.softRecoveryCount >= this.MAX_SOFT_RECOVERIES) {
       console.warn(`⚠️ Soft recoveries agotados (${reason}). Forzando reload completo.`);
       this.softRecoveryCount = 0;
@@ -1683,7 +1611,6 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
     this.playbackWatchdogInterval = window.setInterval(() => {
       if (!this.hlsPlayer) return;
 
-      // Solo actuar si el video debería estar reproduciéndose pero no avanza
       if (video.paused || video.ended) return;
 
       const hasProgress = video.currentTime > this.lastObservedPlaybackTime + 0.1;
@@ -1714,20 +1641,16 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
     const fragId = `${frag.level ?? 'na'}:${frag.sn ?? 'na'}`;
     this.recentFragmentIds.push(fragId);
 
-    // Ventana más grande para detectar el patrón de segment8.ts repetido
     if (this.recentFragmentIds.length > 12) {
       this.recentFragmentIds.shift();
     }
 
     if (this.recentFragmentIds.length < 5) return;
 
-    const uniqueFragments = new Set(this.recentFragmentIds);
-
-    // ← CLAVE: si el mismo segmento aparece 4+ veces seguidas, es el bug del servidor
     const lastFrag = this.recentFragmentIds[this.recentFragmentIds.length - 1];
     const consecutiveRepeats = [...this.recentFragmentIds]
-    .reverse()
-    .findIndex(f => f !== lastFrag);
+      .reverse()
+      .findIndex(f => f !== lastFrag);
 
     const realConsecutive = consecutiveRepeats === -1
       ? this.recentFragmentIds.length
@@ -1736,14 +1659,12 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
     if (realConsecutive >= 4) {
       console.warn(`🔁 Servidor atascado: segmento "${lastFrag}" repetido ${realConsecutive}x. Forzando reconexión completa.`);
       this.recentFragmentIds = [];
-
-      // Reconexión completa, no soft recovery — el servidor necesita una nueva sesión
       this.retryCount = 0;
       this.reloadStream();
       return;
     }
 
-    // Detección original: pocos fragmentos únicos en ventana grande
+    const uniqueFragments = new Set(this.recentFragmentIds);
     if (uniqueFragments.size <= 2 && !video.paused) {
       this.triggerSoftLiveRecovery('bucle de segmentos repetidos detectado', video);
       this.recentFragmentIds = [];
@@ -1785,17 +1706,6 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
 
     const urlLower = this.streamUrl.toLowerCase();
     const isHLS = urlLower.includes('.m3u8');
-    const isMP4 = urlLower.includes('.mp4');
-    const isMKV = urlLower.includes('.mkv');
-    const isAVI = urlLower.includes('.avi');
-    const isChannel = this.contentType === 'channels';
-    const isVOD = this.contentType === 'movies' || this.contentType === 'series';
-    const hasNoExtension = !isHLS && !isMP4 && !isMKV && !isAVI;
-
-    console.log('Tipo de stream:', {
-      isHLS, isMP4, isMKV, isAVI, isChannel, isVOD, hasNoExtension,
-      contentType: this.contentType
-    });
 
     const checkLibs = () => {
       const Hls = (window as any).Hls;
@@ -1804,9 +1714,7 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
 
     const libs = checkLibs();
 
-    // HLS.js is now the primary player for everything
     if (libs.Hls && libs.Hls.isSupported()) {
-      console.log('✅ Usando HLS.js');
       this.initHlsPlayer(video, this.streamUrl, autoplay, savedMuted, savedVolume);
     } else if (isHLS && video.canPlayType('application/vnd.apple.mpegurl')) {
       console.log('🍎 HLS nativo del navegador');
@@ -1829,7 +1737,6 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
 
   private playVideo(video: HTMLVideoElement, autoplay: boolean, wasMuted: boolean, volume: number): void {
     if (autoplay) {
-      // Intentar reproducir con la preferencia del usuario (posiblemente desmuteado)
       video.muted = wasMuted;
       video.volume = volume;
       this.isMuted = wasMuted;
@@ -1843,14 +1750,11 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
             return;
           }
 
-          // El error NotAllowedError significa que el navegador bloqueó el autoplay con sonido
           if (error.name === 'NotAllowedError' && !wasMuted) {
             console.log('🔇 Autoplay con sonido bloqueado. Reintentando silenciado...');
             video.muted = true;
             this.isMuted = true;
             this.volume = 0;
-            // Opcional: no guardamos esto en el playerState para recordar que el usuario
-            // realmente lo quería con sonido, solo que el navegador nos forzó.
 
             video.play().catch(e => {
               console.error('❌ Autoplay silenciado también bloqueado:', e);
@@ -1877,53 +1781,36 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
       enableWorker: true,
       autoStartLoad: true,
       startPosition: -1,
-
-      // ── ARRANQUE INMEDIATO ──────────────────────────────────────────
-      // No esperar nada, reproducir con el primer segmento disponible
-      lowLatencyMode: false,          // true causa más overhead con IPTV estándar
-      initialLiveManifestSize: 1,     // parsear manifest con 1 entrada, no esperar más
-      liveSyncDurationCount: 2,       // síncrono con el live edge tras 2 segmentos
+      lowLatencyMode: false,
+      initialLiveManifestSize: 1,
+      liveSyncDurationCount: 2,
       liveMaxLatencyDurationCount: isLiveContent ? 5 : 10,
-
-      // ── BUFFER MÍN DE REPRODUCCIÓN ─────────────────────────────────
-      // El clave: maxBufferLength bajo = empieza a reproducir antes
-      // IPTV típico tiene segmentos de 2-4s, con 4s de buffer ya puede arrancar
-      maxBufferLength: isLiveContent ? 4 : 30,         // era 6, bajamos más
-      maxMaxBufferLength: isLiveContent ? 8 : 60,      // techo bajo para live
-      backBufferLength: isLiveContent ? 0 : 30,        // 0 = no guardar nada atrás en live
+      maxBufferLength: isLiveContent ? 4 : 30,
+      maxMaxBufferLength: isLiveContent ? 8 : 60,
+      backBufferLength: isLiveContent ? 0 : 30,
       maxBufferSize: isLiveContent ? 20 * 1000 * 1000 : 60 * 1000 * 1000,
-      maxBufferHole: 1.0,             // más tolerante a huecos → menos cortes
-
-      // ── LIVE SYNC ──────────────────────────────────────────────────
+      maxBufferHole: 1.0,
       liveSyncMode: 'buffered',
       liveSyncOnStallIncrease: 1,
-      maxLiveSyncPlaybackRate: 1.1,   // no acelerar mucho, causa audio raro
-
-      // ── STALL RECOVERY ─────────────────────────────────────────────
-      nudgeOffset: 0.5,               // salto más grande para superar huecos
-      nudgeMaxRetry: 8,               // más reintentos de nudge antes de error
+      maxLiveSyncPlaybackRate: 1.1,
+      nudgeOffset: 0.5,
+      nudgeMaxRetry: 8,
       nudgeOnVideoHole: true,
       highBufferWatchdogPeriod: 1,
       maxStarvationDelay: isLiveContent ? 2 : 4,
       maxLoadingDelay: isLiveContent ? 2 : 4,
-
-      // ── ABR / CALIDAD ──────────────────────────────────────────────
-      startLevel: 0,                  // ← CLAVE: empezar en calidad más baja siempre
-      capLevelToPlayerSize: false,    // no limitar por tamaño, usar el mejor nivel disponible
-      abrEwmaDefaultEstimate: 500000, // estimación conservadora inicial → elige calidad baja al inicio
+      startLevel: 0,
+      capLevelToPlayerSize: false,
+      abrEwmaDefaultEstimate: 500000,
       abrBandWidthFactor: 0.85,
-      abrBandWidthUpFactor: 0.6,      // sube de calidad más despacio → menos rebuffering
+      abrBandWidthUpFactor: 0.6,
       abrEwmaFastLive: 3,
       abrEwmaSlowLive: 9,
       abrEwmaFastVoD: 3,
       abrEwmaSlowVoD: 9,
-
-      // ── CARGA DE FRAGMENTOS ────────────────────────────────────────
-      startFragPrefetch: true,        // ← prefetch del siguiente frag mientras parsea manifest
-      testBandwidth: false,           // no medir bandwidth al inicio, ahorra tiempo
+      startFragPrefetch: true,
+      testBandwidth: false,
       liveDurationInfinity: isLiveContent,
-
-      // ── REINTENTOS ─────────────────────────────────────────────────
       manifestLoadingMaxRetry: 3,
       levelLoadingMaxRetry: 3,
       fragLoadingMaxRetry: 4,
@@ -1971,7 +1858,6 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
       this.trackLiveFragmentLoop(data, video);
     });
 
-    // ── CLAVE: reproducir en cuanto tengamos el nivel, no esperar más buffer ──
     this.hlsPlayer.on(Hls.Events.LEVEL_LOADED, (_event: any, data: any) => {
       this.hasLevelDetails = true;
       this.logHlsStartupTrace('level-loaded', {
@@ -1983,11 +1869,8 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
 
       if (!isLiveContent) return;
 
-      // Si el video lleva más de 3s sin arrancar tras cargar el nivel, forzar play
       if (video.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA && video.paused) {
-        console.log('▶️ LEVEL_LOADED: forzando play tras nivel cargado');
-        video.play().catch(() => {
-        });
+        video.play().catch(() => {});
       }
     });
 
@@ -2002,17 +1885,13 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
 
       this.startStartupWatchdog(video);
 
-      // En cuanto el primer fragmento está en buffer, intentar arrancar
       if (video.paused && video.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA) {
-        console.log('▶️ FRAG_BUFFERED: primer fragmento listo, arrancando');
-        video.play().catch(() => {
-        });
+        video.play().catch(() => {});
       }
     });
 
     this.hlsPlayer.on(Hls.Events.MANIFEST_PARSED, () => {
       this.hasManifestParsed = true;
-      console.log('✅ HLS Manifest cargado');
       this.logHlsStartupTrace('manifest-parsed', {
         levels: this.hlsPlayer?.levels?.length ?? 0,
       });
@@ -2041,18 +1920,16 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
       const isNonFatalGapError = !data?.fatal && [
         'bufferStalledError',
         'bufferSeekOverHole',
-        'bufferNudgeOnStall',        // ← añadido: nudge no es fatal
+        'bufferNudgeOnStall',
       ].includes(data?.details);
 
       if (isNonFatalGapError) {
-        console.warn('⚠️ HLS gap no fatal:', data?.details);
         this.isStreamLoading = false;
         this.cdr.markForCheck();
         return;
       }
 
       if (!data?.fatal && data?.type === Hls.ErrorTypes.MEDIA_ERROR) {
-        console.warn('⚠️ HLS media error no fatal:', data?.details);
         this.isStreamLoading = false;
         this.cdr.markForCheck();
         return;
@@ -2087,7 +1964,6 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
         this.retryCount++;
         const delay = 1500 * Math.pow(1.5, this.retryCount - 1);
 
-        console.warn(`⚠️ Reintento ${this.retryCount}/${this.MAX_RETRIES} en ${delay}ms`);
         this.hasError = true;
         this.errorMessage = `Reconectando... (${this.retryCount}/${this.MAX_RETRIES})`;
         this.cdr.markForCheck();
@@ -2099,21 +1975,16 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
 
         if (this.retryTimeout) clearTimeout(this.retryTimeout);
         this.retryTimeout = window.setTimeout(() => {
-          console.log(`🔄 Recargando stream (intento ${this.retryCount})...`);
           this.reloadStream();
         }, delay);
 
       } else if (this.retryCount >= this.MAX_RETRIES) {
-        console.error('❌ Máximos reintentos alcanzados');
         this.hasError = true;
         this.errorMessage = 'Error de reproducción. Por favor, intenta de nuevo más tarde.';
         this.cdr.markForCheck();
 
         if (this.hlsPlayer) {
-          try {
-            this.hlsPlayer.destroy();
-          } catch (e) {
-          }
+          try { this.hlsPlayer.destroy(); } catch (e) {}
           this.hlsPlayer = null;
         }
       }
@@ -2170,7 +2041,6 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
 
     if (!this.boundWaitingHandler) {
       this.boundWaitingHandler = () => {
-        console.log('Video en espera...');
         this.isStreamLoading = true;
         this.cdr.markForCheck();
       };
@@ -2180,7 +2050,6 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
       this.boundCanPlayHandler = () => {
         this.isStreamLoading = false;
         if (this.retryCount > 0 || this.hasError) {
-          console.log('✅ Video canplay, reseteando estado');
           this.retryCount = 0;
           this.hasError = false;
           this.errorMessage = '';
@@ -2200,7 +2069,6 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
           this.startupWatchdogTimeout = undefined;
         }
         if (this.retryCount > 0 || this.hasError) {
-          console.log('✅ Video loadeddata, reseteando estado');
           this.retryCount = 0;
           this.hasError = false;
           this.errorMessage = '';
@@ -2226,12 +2094,10 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
           errorCode === MediaError.MEDIA_ERR_DECODE) {
 
           if (this.tryNextExtension()) {
-            console.warn(`🔄 Error de formato (${errorCode}), intentando con extensión: ${this.currentExtension}`);
             this.reloadStream();
             return;
           }
 
-          console.error('❌ Error de formato no soportado o decode (sin más opciones)');
           this.hasError = true;
           this.errorMessage = errorCode === MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED
             ? 'Formato de video no soportado'
@@ -2245,22 +2111,15 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
 
         if (isAuthError && this.retryCount < this.MAX_RETRIES) {
           this.retryCount++;
-          console.warn(`⚠️ Error de red. Reintento ${this.retryCount}/${this.MAX_RETRIES}`);
-
           this.hasError = true;
           this.errorMessage = `Error de red, reintentando... (${this.retryCount}/${this.MAX_RETRIES})`;
           this.cdr.markForCheck();
 
-          if (this.retryTimeout) {
-            clearTimeout(this.retryTimeout);
-          }
-
+          if (this.retryTimeout) clearTimeout(this.retryTimeout);
           this.retryTimeout = window.setTimeout(() => {
-            console.log('🔄 Reintentando carga del stream...');
             this.reloadStream();
           }, 2000);
         } else if (this.retryCount >= this.MAX_RETRIES) {
-          console.error('❌ Máximo número de reintentos alcanzado');
           this.hasError = true;
           this.errorMessage = 'No se pudo cargar el contenido';
           this.cdr.markForCheck();
@@ -2324,15 +2183,9 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
 
       this.progressListenersAttached = true;
 
-      if (video.duration) {
-        this.duration = video.duration;
-      }
-      if (video.currentTime) {
-        this.currentTime = video.currentTime;
-      }
-      if (video.buffered.length > 0) {
-        this.buffered = video.buffered.end(video.buffered.length - 1);
-      }
+      if (video.duration) this.duration = video.duration;
+      if (video.currentTime) this.currentTime = video.currentTime;
+      if (video.buffered.length > 0) this.buffered = video.buffered.end(video.buffered.length - 1);
       this.cdr.markForCheck();
     }
   }
@@ -2342,19 +2195,10 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
 
     const ext = this.currentExtension.toLowerCase();
 
-    if (ext === '.mp4') {
-      this.currentExtension = '.ts';
-      return true;
-    } else if (ext === '.ts') {
-      this.currentExtension = '.mkv';
-      return true;
-    } else if (ext === '.mkv') {
-      this.currentExtension = '.avi';
-      return true;
-    } else if (ext === '.avi') {
-      this.currentExtension = '';
-      return true;
-    }
+    if (ext === '.mp4') { this.currentExtension = '.ts'; return true; }
+    else if (ext === '.ts') { this.currentExtension = '.mkv'; return true; }
+    else if (ext === '.mkv') { this.currentExtension = '.avi'; return true; }
+    else if (ext === '.avi') { this.currentExtension = ''; return true; }
 
     return false;
   }
@@ -2365,7 +2209,6 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
       return;
     }
 
-    console.log('🔄 Iniciando recarga de stream...');
     this.isStreamLoading = true;
     this.cdr.markForCheck();
 
@@ -2408,10 +2251,7 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
 
     this.streamUrl = this.buildStreamUrl(originalUrl, username, password);
 
-    console.log(`✨ URL reconstruida (intento ${this.retryCount}):`, this.streamUrl);
-
     setTimeout(() => {
-      console.log('🎬 Reinicializando player...');
       this.initializePlayer(true);
     }, 500);
   }
@@ -2547,9 +2387,7 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
 
   async castCurrentStream(): Promise<void> {
     const castFramework = this.getCastFramework();
-    if (!this.streamUrl) {
-      return;
-    }
+    if (!this.streamUrl) return;
 
     if (!castFramework || !this.getChromeCast()) {
       this.castError = 'Chromecast no esta disponible en este navegador';
@@ -2567,13 +2405,6 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
     this.cdr.markForCheck();
 
     try {
-      const castUrl = this.getCastStreamUrl();
-      console.log('Chromecast load request:', {
-        castUrl,
-        contentType: this.getCastContentType(castUrl),
-        title: this.eventTitle || this.currentItem?.nombre || 'WalacTV'
-      });
-
       const castContext = castFramework.CastContext.getInstance();
 
       if (!castContext.getCurrentSession()) {
@@ -2590,25 +2421,12 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
       this.isCasting = true;
       this.stopLocalPlaybackForCast();
     } catch (error) {
-      const castError = error as {
-        code?: string;
-        description?: string;
-        details?: unknown
-      } | undefined;
+      const castError = error as { code?: string; description?: string; details?: unknown } | undefined;
       const serializedDetails = (() => {
-        try {
-          return JSON.stringify(castError?.details ?? null);
-        } catch {
-          return String(castError?.details ?? '');
-        }
+        try { return JSON.stringify(castError?.details ?? null); } catch { return String(castError?.details ?? ''); }
       })();
 
-      console.error('Error enviando a Chromecast:', {
-        raw: error,
-        code: castError?.code,
-        description: castError?.description,
-        details: castError?.details
-      });
+      console.error('Error enviando a Chromecast:', error);
       this.castError = castError?.code
         ? `Chromecast: ${castError.code}${castError?.description ? ` - ${castError.description}` : ''}${serializedDetails && serializedDetails !== 'null' ? ` (${serializedDetails})` : ''}`
         : 'No se pudo iniciar Chromecast';
@@ -2620,9 +2438,7 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
 
   private disconnectCastSession(): void {
     const castFramework = this.getCastFramework();
-    if (!castFramework) {
-      return;
-    }
+    if (!castFramework) return;
 
     try {
       castFramework.CastContext.getInstance().endCurrentSession(true);
@@ -2686,13 +2502,8 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   private resumeLocalPlaybackAfterCast(): void {
-    if (!this.streamUrl || !this.videoElement) {
-      return;
-    }
-
-    if (this.hlsPlayer) {
-      return;
-    }
+    if (!this.streamUrl || !this.videoElement) return;
+    if (this.hlsPlayer) return;
 
     this.retryCount = 0;
     this.hasError = false;
@@ -2707,21 +2518,15 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   private getCastStreamUrl(): string {
-    if (this.castTestUrlOverride) {
-      return this.castTestUrlOverride;
-    }
+    if (this.castTestUrlOverride) return this.castTestUrlOverride;
 
-    if (this.contentType !== 'channels') {
-      return this.streamUrl;
-    }
+    if (this.contentType !== 'channels') return this.streamUrl;
 
     const username = localStorage.getItem('iptv_username') || '';
     const password = localStorage.getItem('iptv_password') || '';
     const streamId = this.extractStreamIdFromUrl(this.streamUrl);
 
-    if (!username || !password || !streamId) {
-      return this.streamUrl;
-    }
+    if (!username || !password || !streamId) return this.streamUrl;
 
     const encodedUsername = encodeURIComponent(username);
     const encodedPassword = encodeURIComponent(password);
@@ -2734,7 +2539,6 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
     const cleanUrl = url.split('?')[0];
     const segments = cleanUrl.split('/').filter(Boolean);
     const lastSegment = segments[segments.length - 1] || '';
-
     return lastSegment.replace(/\.(ts|m3u8|mp4|mkv|avi)$/i, '');
   }
 
@@ -2745,19 +2549,9 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
     if (normalizedUrl.includes('.m3u8') || extension === '.m3u8' || (this.contentType === 'channels' && !extension)) {
       return 'application/x-mpegURL';
     }
-
-    if (normalizedUrl.includes('.ts') || extension === '.ts') {
-      return 'video/mp2t';
-    }
-
-    if (normalizedUrl.includes('.mkv') || extension === '.mkv') {
-      return 'video/x-matroska';
-    }
-
-    if (normalizedUrl.includes('.avi') || extension === '.avi') {
-      return 'video/x-msvideo';
-    }
-
+    if (normalizedUrl.includes('.ts') || extension === '.ts') return 'video/mp2t';
+    if (normalizedUrl.includes('.mkv') || extension === '.mkv') return 'video/x-matroska';
+    if (normalizedUrl.includes('.avi') || extension === '.avi') return 'video/x-msvideo';
     return 'video/mp4';
   }
 
@@ -2814,16 +2608,12 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
 
   private hideNavbar(): void {
     const navbar = document.querySelector('app-navbar') as HTMLElement;
-    if (navbar) {
-      navbar.style.display = 'none';
-    }
+    if (navbar) navbar.style.display = 'none';
   }
 
   private showNavbar(): void {
     const navbar = document.querySelector('app-navbar') as HTMLElement;
-    if (navbar) {
-      navbar.style.display = '';
-    }
+    if (navbar) navbar.style.display = '';
   }
 
   toggleFullscreen() {
@@ -2840,16 +2630,13 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
 
     if (!isInFullscreen) {
       this.hideNavbar();
-
       if (elem.requestFullscreen) elem.requestFullscreen();
       else if (elem.webkitRequestFullscreen) elem.webkitRequestFullscreen();
       else if (elem.mozRequestFullScreen) elem.mozRequestFullScreen();
       else if (elem.msRequestFullscreen) elem.msRequestFullscreen();
-
       this.lockToLandscape();
     } else {
       this.unlockOrientation();
-
       if (doc.exitFullscreen) doc.exitFullscreen();
       else if (doc.webkitExitFullscreen) doc.webkitExitFullscreen();
       else if (doc.mozCancelFullScreen) doc.mozCancelFullScreen();
@@ -2859,13 +2646,7 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
 
   private lockToLandscape(): void {
     if (this.isOrientationLockSupported()) {
-      const screenOrientation = (screen as any).orientation;
-
-      screenOrientation.lock('landscape')
-      .then(() => {
-      })
-      .catch((error: any) => {
-      });
+      (screen as any).orientation.lock('landscape').then(() => {}).catch((_: any) => {});
     }
   }
 
