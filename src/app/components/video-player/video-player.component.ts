@@ -18,11 +18,12 @@ import {
   IptvSeries,
   PaginatedResponse
 } from '../../services/data.service';
-import {Observable} from 'rxjs';
+import {firstValueFrom, Observable} from 'rxjs';
 import {PlayerStateService, ContentType} from '../../services/player-state.service';
 import {slugify} from '../../utils/slugify';
 import {NavbarComponent} from '../../shared/components/navbar-component/navbar.component';
-import {ChannelResolved} from '../../models/calendar.model';
+import {CalendarEvent, ChannelResolved} from '../../models/calendar.model';
+import {CalendarService} from '../../services/calendar.service';
 
 
 interface StreamSource {
@@ -50,6 +51,7 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
   private hlsPlayer: any;
   private shouldInitializePlayer = false;
   private dataService = inject(DataService);
+  private calendarService = inject(CalendarService);
   private playerState = inject(PlayerStateService);
   private cdr = inject(ChangeDetectorRef);
   private router = inject(Router);
@@ -136,6 +138,7 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
   private totalItems = 0;
   private totalPages = 0;
   private isLoadingMore = false;
+  private initialItemsLoadPromise: Promise<void> | null = null;
 
   private retryCount = 0;
   readonly MAX_RETRIES = 5;
@@ -356,23 +359,142 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
 
   private async findItemBySlug(slug: string): Promise<void> {
     if (!this.itemsLoaded) {
-      setTimeout(() => this.findItemBySlug(slug), 200);
+      await this.loadInitialItems();
+    }
+
+    const matchedEvent = await this.findEventBySlug(slug);
+
+    if (matchedEvent) {
+      this.loadEventFromRoute(matchedEvent);
       return;
     }
 
-    let foundItem = this.allItems.find(c => slugify(c.nombre) === slug);
+    let foundItem = this.findMatchingItem(slug);
 
     if (!foundItem) {
-      foundItem = this.allItems.find(c =>
-        slugify(c.nombre).includes(slug) || slug.includes(slugify(c.nombre))
-      );
+      foundItem = await this.findItemBySearch(slug);
     }
 
     if (foundItem) {
       await this.setCurrentItem(foundItem);
-    } else {
-      console.warn('Item no encontrado:', slug);
+      return;
     }
+
+    console.warn('Item no encontrado:', slug);
+  }
+
+  private findMatchingItem(slug: string): ContentItem | undefined {
+    return this.allItems.find(c => slugify(c.nombre) === slug)
+      || this.allItems.find(c => {
+        const itemSlug = slugify(c.nombre);
+        return itemSlug.includes(slug) || slug.includes(itemSlug);
+      });
+  }
+
+  private async findItemBySearch(slug: string): Promise<ContentItem | undefined> {
+    const searchQueries = this.buildSlugSearchQueries(slug);
+
+    for (const searchQuery of searchQueries) {
+      const response = await firstValueFrom(
+        this.dataService.getChannels(1, this.BATCH_SIZE, undefined, undefined, searchQuery)
+      );
+
+      const matchedItem = response.items.find(item => this.matchesSlugCandidate(slugify(item.nombre), slug));
+
+      if (matchedItem) {
+        this.allItems = response.items;
+        this.totalItems = response.total;
+        this.totalPages = this.resolveTotalPages(response);
+        this.currentPage = response.page;
+        this.itemsLoaded = true;
+        this.allItems.sort((a, b) => (a.num || 0) - (b.num || 0));
+        return matchedItem;
+      }
+    }
+
+    return undefined;
+  }
+
+  private buildSlugSearchQueries(slug: string): string[] {
+    const normalized = slug.replace(/-/g, ' ').trim();
+    const words = normalized.split(/\s+/).filter(Boolean);
+    const candidateQueries: string[] = [normalized];
+
+    for (let size = words.length - 1; size >= 2; size--) {
+      candidateQueries.push(words.slice(0, size).join(' '));
+    }
+
+    return Array.from(new Set(candidateQueries.filter(Boolean)));
+  }
+
+  private matchesSlugCandidate(candidateSlug: string, routeSlug: string): boolean {
+    return candidateSlug === routeSlug || candidateSlug.includes(routeSlug) || routeSlug.includes(candidateSlug);
+  }
+
+  private async findEventBySlug(slug: string): Promise<CalendarEvent | null> {
+    const candidateDates = this.getCandidateEventDates();
+    const responses = await Promise.all(
+      candidateDates.map(date => firstValueFrom(this.calendarService.getEventsByDate(date)))
+    );
+
+    const events = responses.flatMap(response => response.eventos || []);
+
+    return events.find(event => this.matchesEventSlug(event, slug)) || null;
+  }
+
+  private getCandidateEventDates(): string[] {
+    const today = new Date();
+
+    return [-1, 0, 1].map(offset => {
+      const date = new Date(today);
+      date.setDate(today.getDate() + offset);
+      return date.toISOString().split('T')[0];
+    });
+  }
+
+  private matchesEventSlug(event: CalendarEvent, slug: string): boolean {
+    const candidateSlugs = [
+      event.equipos,
+      event.competicion ? `${event.competicion} ${event.equipos}` : '',
+      event.categoria ? `${event.categoria} ${event.equipos}` : ''
+    ]
+      .filter(Boolean)
+      .map(value => slugify(value));
+
+    return candidateSlugs.some(candidateSlug => (
+      candidateSlug === slug || candidateSlug.includes(slug) || slug.includes(candidateSlug)
+    ));
+  }
+
+  private loadEventFromRoute(event: CalendarEvent): void {
+    if (!event.canales_resueltos.length) {
+      console.warn('Evento encontrado sin canales resueltos:', event.id);
+      return;
+    }
+
+    this.eventChannels = event.canales_resueltos;
+    this.eventTitle = event.equipos;
+    this.selectedEventChannel = this.resolveInitialEventChannel(event.canales_resueltos);
+    this.showQualitySelector = true;
+    this.updateQualitySelectors();
+
+    this.playerState.setEventChannels(event.canales_resueltos);
+    this.playerState.setEventTitle(event.equipos);
+
+    if (!this.selectedEventChannel) {
+      return;
+    }
+
+    this.playerState.setSelectedChannelId(this.selectedEventChannel.channel_id);
+    this.loadChannelById(this.selectedEventChannel.channel_id, event.equipos);
+  }
+
+  private resolveInitialEventChannel(channels: ChannelResolved[]): ChannelResolved | null {
+    if (!channels.length) {
+      return null;
+    }
+
+    return channels.find(channel => channel.priority === 0) || channels[0];
   }
 
   private async setCurrentItem(item: ContentItem): Promise<void> {
@@ -516,7 +638,16 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   private async loadInitialItems(): Promise<void> {
-    return new Promise((resolve) => {
+    if (this.itemsLoaded) {
+      return;
+    }
+
+    if (this.initialItemsLoadPromise) {
+      await this.initialItemsLoadPromise;
+      return;
+    }
+
+    this.initialItemsLoadPromise = new Promise((resolve) => {
       const loadObservable = this.getLoadObservable(1);
 
       loadObservable.subscribe({
@@ -531,15 +662,20 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
           if (this.currentItem) {
             this.updateCurrentItemIndex();
           }
+
+          this.initialItemsLoadPromise = null;
           resolve();
         },
         error: (error: any) => {
           console.error('Error cargando items:', error);
           this.itemsLoaded = true;
+          this.initialItemsLoadPromise = null;
           resolve();
         }
       });
     });
+
+    await this.initialItemsLoadPromise;
   }
 
   private updateCurrentItemIndex(): void {
