@@ -358,24 +358,63 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   private async findItemBySlug(slug: string): Promise<void> {
+    console.log('[direct-player] findItemBySlug:start', {
+      slug,
+      itemsLoaded: this.itemsLoaded,
+      allItemsCount: this.allItems.length,
+      totalItems: this.totalItems,
+      totalPages: this.totalPages,
+      contentType: this.contentType
+    });
+
     if (!this.itemsLoaded) {
       await this.loadInitialItems();
+
+      console.log('[direct-player] findItemBySlug:after-initial-load', {
+        slug,
+        itemsLoaded: this.itemsLoaded,
+        allItemsCount: this.allItems.length,
+        totalItems: this.totalItems,
+        totalPages: this.totalPages
+      });
     }
 
     const matchedEvent = await this.findEventBySlug(slug);
 
     if (matchedEvent) {
+      console.log('[direct-player] findItemBySlug:event-match', {
+        slug,
+        eventId: matchedEvent.id,
+        eventTitle: matchedEvent.equipos,
+        channelsCount: matchedEvent.canales_resueltos.length
+      });
+
       this.loadEventFromRoute(matchedEvent);
       return;
     }
 
     let foundItem = this.findMatchingItem(slug);
 
+    console.log('[direct-player] findItemBySlug:local-match', {
+      slug,
+      found: !!foundItem,
+      itemId: foundItem?.id,
+      itemName: foundItem?.nombre,
+      itemNum: foundItem?.num
+    });
+
     if (!foundItem) {
       foundItem = await this.findItemBySearch(slug);
     }
 
     if (foundItem) {
+      console.log('[direct-player] findItemBySlug:resolved-item', {
+        slug,
+        itemId: foundItem.id,
+        itemName: foundItem.nombre,
+        itemNum: foundItem.num
+      });
+
       await this.setCurrentItem(foundItem);
       return;
     }
@@ -394,12 +433,37 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
   private async findItemBySearch(slug: string): Promise<ContentItem | undefined> {
     const searchQueries = this.buildSlugSearchQueries(slug);
 
+    console.log('[direct-player] findItemBySearch:queries', {
+      slug,
+      searchQueries
+    });
+
     for (const searchQuery of searchQueries) {
       const response = await firstValueFrom(
         this.dataService.getChannels(1, this.BATCH_SIZE, undefined, undefined, searchQuery)
       );
 
+      console.log('[direct-player] findItemBySearch:response', {
+        slug,
+        searchQuery,
+        responsePage: response.page,
+        responseTotal: response.total,
+        responsePages: response.pages,
+        itemsCount: response.items.length,
+        firstItemName: response.items[0]?.nombre,
+        firstItemId: response.items[0]?.id
+      });
+
       const matchedItem = response.items.find(item => this.matchesSlugCandidate(slugify(item.nombre), slug));
+
+      console.log('[direct-player] findItemBySearch:match-check', {
+        slug,
+        searchQuery,
+        found: !!matchedItem,
+        itemId: matchedItem?.id,
+        itemName: matchedItem?.nombre,
+        itemNum: matchedItem?.num
+      });
 
       if (matchedItem) {
         this.allItems = response.items;
@@ -433,13 +497,34 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
 
   private async findEventBySlug(slug: string): Promise<CalendarEvent | null> {
     const candidateDates = this.getCandidateEventDates();
+    console.log('[direct-player] findEventBySlug:start', {
+      slug,
+      candidateDates
+    });
+
     const responses = await Promise.all(
       candidateDates.map(date => firstValueFrom(this.calendarService.getEventsByDate(date)))
     );
 
     const events = responses.flatMap(response => response.eventos || []);
 
-    return events.find(event => this.matchesEventSlug(event, slug)) || null;
+    console.log('[direct-player] findEventBySlug:responses', {
+      slug,
+      dates: candidateDates,
+      totals: responses.map(response => response.total_eventos || response.eventos?.length || 0),
+      combinedEvents: events.length
+    });
+
+    const matchedEvent = events.find(event => this.matchesEventSlug(event, slug)) || null;
+
+    console.log('[direct-player] findEventBySlug:result', {
+      slug,
+      found: !!matchedEvent,
+      eventId: matchedEvent?.id,
+      eventTitle: matchedEvent?.equipos
+    });
+
+    return matchedEvent;
   }
 
   private getCandidateEventDates(): string[] {
@@ -471,6 +556,12 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
       console.warn('Evento encontrado sin canales resueltos:', event.id);
       return;
     }
+
+    console.log('[direct-player] loadEventFromRoute', {
+      eventId: event.id,
+      eventTitle: event.equipos,
+      channelsCount: event.canales_resueltos.length
+    });
 
     this.eventChannels = event.canales_resueltos;
     this.eventTitle = event.equipos;
@@ -1227,6 +1318,15 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
 
     this.dataService.getChannel(channelId).subscribe({
       next: (iptvChannel) => {
+        console.log('[direct-player] loadChannelById:response', {
+          channelId,
+          found: !!iptvChannel,
+          eventTitle,
+          itemName: iptvChannel?.nombre,
+          itemNum: iptvChannel?.num,
+          itemUrl: iptvChannel?.stream_url || iptvChannel?.url
+        });
+
         if (!iptvChannel) {
           console.error('Canal no encontrado:', channelId);
           return;
