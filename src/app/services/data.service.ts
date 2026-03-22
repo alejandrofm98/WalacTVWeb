@@ -217,15 +217,22 @@ export class DataService {
     );
   }
 
-  getChannel(id: string): Observable<IptvChannel | null> {
-    return this.http.get<IptvChannel>(
-      `${this.apiUrl}/api/content/channels/${id}`,
-      { headers: this.getHeaders() }
-    ).pipe(
-      map(channel => this.normalizeChannel(channel as Partial<IptvChannel> & Record<string, unknown>)),
-      catchError(() => of(null))
-    );
+getChannel(id: string): Observable<IptvChannel | null> {
+  const password = localStorage.getItem('iptv_password') || '';
+
+  let params = new HttpParams();
+  if (password) {
+    params = params.set('password', password);
   }
+
+  return this.http.get<IptvChannel>(
+    `${this.apiUrl}/api/content/channels/${id}`,
+    { headers: this.getHeaders(), params }
+  ).pipe(
+    map(channel => this.normalizeChannel(channel as Partial<IptvChannel> & Record<string, unknown>)),
+    catchError(() => of(null))
+  );
+}
 
   getMovies(page: number = 1, pageSize: number = 80, group?: string, country?: string, search?: string): Observable<PaginatedResponse<IptvMovie>> {
     let params = this.buildParams(page, pageSize, group, country, search);
