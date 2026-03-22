@@ -132,13 +132,12 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
   @ViewChild('seekBar') seekBarElement!: ElementRef<HTMLDivElement>;
 
   private readonly BATCH_SIZE = 100;
-  private readonly PRELOAD_THRESHOLD = 20;
   private readonly DEFAULT_CAST_TEST_URL = 'https://devstreaming-cdn.apple.com/videos/streaming/examples/img_bipbop_adv_example_ts/master.m3u8';
-  private currentPage = 1;
   private totalItems = 0;
   private totalPages = 0;
-  private isLoadingMore = false;
   private initialItemsLoadPromise: Promise<void> | null = null;
+  private readonly loadedPages = new Set<number>();
+  private readonly pendingPageLoads = new Map<number, Promise<void>>();
 
   private retryCount = 0;
   readonly MAX_RETRIES = 5;
@@ -450,8 +449,8 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
         this.allItems = response.items;
         this.totalItems = response.total;
         this.totalPages = this.resolveTotalPages(response);
-        this.currentPage = response.page;
         this.itemsLoaded = true;
+        this.setLoadedPages([response.page]);
         this.allItems.sort((a, b) => (a.num || 0) - (b.num || 0));
         return matchedItem;
       }
@@ -653,24 +652,23 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   private loadSpecificPage(page: number): Promise<void> {
-    return new Promise((resolve) => {
-      if (this.isLoadingMore) {
-        resolve();
-        return;
-      }
+    const maxKnownPage = this.getKnownTotalPages();
+    if (page < 1 || (maxKnownPage > 0 && page > maxKnownPage)) {
+      return Promise.resolve();
+    }
 
-      const maxKnownPage = this.getKnownTotalPages();
-      if (page < 1 || (maxKnownPage > 0 && page > maxKnownPage)) {
-        resolve();
-        return;
-      }
+    if (this.loadedPages.has(page)) {
+      return Promise.resolve();
+    }
 
-      this.isLoadingMore = true;
+    const pendingLoad = this.pendingPageLoads.get(page);
+    if (pendingLoad) {
+      return pendingLoad;
+    }
 
-      const loadObservable = this.getLoadObservable(page);
-
-      loadObservable.subscribe({
-        next: (response: any) => {
+    const pageLoadPromise = new Promise<void>((resolve) => {
+      this.getLoadObservable(page).subscribe({
+        next: (response: PaginatedResponse<ContentItem>) => {
           const newItems = response.items.filter(
             (newItem: ContentItem) => !this.allItems.some(existing => existing.id === newItem.id)
           );
@@ -679,22 +677,25 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
           this.allItems = [...this.allItems, ...newItems];
           this.allItems.sort((a, b) => (a.num || 0) - (b.num || 0));
 
-          this.currentPage = page;
           this.totalItems = response.total;
           this.totalPages = this.resolveTotalPages(response);
-          this.isLoadingMore = false;
           this.itemsLoaded = true;
+          this.loadedPages.add(response.page || page);
 
           resolve();
         },
-        error: (error: any) => {
+        error: (error: unknown) => {
           console.error(`Error cargando página ${page}:`, error);
-          this.isLoadingMore = false;
           this.itemsLoaded = true;
           resolve();
         }
       });
+    }).finally(() => {
+      this.pendingPageLoads.delete(page);
     });
+
+    this.pendingPageLoads.set(page, pageLoadPromise);
+    return pageLoadPromise;
   }
 
   private getLoadObservable(page: number): Observable<PaginatedResponse<ContentItem>> {
@@ -727,8 +728,8 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
           this.allItems = response.items;
           this.totalItems = response.total;
           this.totalPages = this.resolveTotalPages(response);
-          this.currentPage = 1;
           this.itemsLoaded = true;
+          this.setLoadedPages([response.page || 1]);
           this.allItems.sort((a, b) => (a.num || 0) - (b.num || 0));
 
           if (this.currentItem) {
@@ -793,38 +794,139 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
     return 0;
   }
 
+  private setLoadedPages(pages: number[]): void {
+    this.loadedPages.clear();
+
+    pages
+      .filter(page => Number.isInteger(page) && page > 0)
+      .forEach(page => this.loadedPages.add(page));
+  }
+
+  private getPageForItemNumber(itemNum: number): number | null {
+    if (!this.isValidPagedItemNumber(itemNum)) {
+      return null;
+    }
+
+    return Math.ceil(itemNum / this.BATCH_SIZE);
+  }
+
+  private getFirstLoadedItem(): ContentItem | null {
+    return this.allItems.length > 0 ? [...this.allItems].sort((a, b) => (a.num || 0) - (b.num || 0))[0] : null;
+  }
+
+  private getLastLoadedItem(): ContentItem | null {
+    return this.allItems.length > 0 ? [...this.allItems].sort((a, b) => (b.num || 0) - (a.num || 0))[0] : null;
+  }
+
+  private async ensureAdjacentPageLoaded(direction: 'next' | 'prev'): Promise<void> {
+    if (!this.currentItem) {
+      return;
+    }
+
+    const currentPage = this.getPageForItemNumber(this.currentItem.num || 0);
+    if (currentPage === null) {
+      return;
+    }
+
+    const targetPage = direction === 'next' ? currentPage + 1 : currentPage - 1;
+    const maxKnownPage = this.getKnownTotalPages();
+
+    if (targetPage < 1 || (maxKnownPage > 0 && targetPage > maxKnownPage)) {
+      return;
+    }
+
+    await this.loadSpecificPage(targetPage);
+  }
+
+  private async resolveAdjacentItem(direction: 'next' | 'prev'): Promise<ContentItem | null> {
+    if (!this.currentItem) {
+      return null;
+    }
+
+    const currentNum = this.currentItem.num || 0;
+    const targetNum = direction === 'next' ? currentNum + 1 : currentNum - 1;
+
+    if (targetNum < 1) {
+      const lastPage = this.getKnownTotalPages();
+      if (lastPage > 0) {
+        await this.loadSpecificPage(lastPage);
+      }
+
+      return this.getLastLoadedItem();
+    }
+
+    if (this.totalItems > 0 && targetNum > this.totalItems) {
+      await this.loadSpecificPage(1);
+      return this.getFirstLoadedItem();
+    }
+
+    let adjacentItem = this.allItems.find(item => item.num === targetNum) ?? null;
+    if (adjacentItem) {
+      return adjacentItem;
+    }
+
+    const targetPage = this.getPageForItemNumber(targetNum);
+    if (targetPage !== null) {
+      await this.loadSpecificPage(targetPage);
+      adjacentItem = this.allItems.find(item => item.num === targetNum) ?? null;
+      if (adjacentItem) {
+        return adjacentItem;
+      }
+    }
+
+    await this.ensureAdjacentPageLoaded(direction);
+    return this.allItems.find(item => item.num === targetNum) ?? null;
+  }
+
+  private async refreshAdjacentChannelInfo(): Promise<void> {
+    if (!this.currentItem || this.allItems.length === 0) {
+      this.previousChannelInfo = '';
+      this.nextChannelInfo = '';
+      this.cdr.markForCheck();
+      return;
+    }
+
+    const currentNum = this.currentItem.num || 0;
+
+    const prevTargetNum = currentNum - 1;
+    if (prevTargetNum >= 1 && !this.allItems.some(item => item.num === prevTargetNum)) {
+      const prevPage = this.getPageForItemNumber(prevTargetNum);
+      if (prevPage !== null) {
+        await this.loadSpecificPage(prevPage);
+      }
+    }
+
+    const nextTargetNum = currentNum + 1;
+    if (this.totalItems > 0 && nextTargetNum <= this.totalItems && !this.allItems.some(item => item.num === nextTargetNum)) {
+      const nextPage = this.getPageForItemNumber(nextTargetNum);
+      if (nextPage !== null) {
+        await this.loadSpecificPage(nextPage);
+      }
+    }
+
+    const prevItem = prevTargetNum >= 1
+      ? this.allItems.find(item => item.num === prevTargetNum) ?? null
+      : this.getLastLoadedItem();
+    const nextItem = this.totalItems > 0 && nextTargetNum > this.totalItems
+      ? this.getFirstLoadedItem()
+      : this.allItems.find(item => item.num === nextTargetNum) ?? null;
+
+    this.previousChannelInfo = prevItem ? `${prevItem.num} - ${prevItem.nombre}` : '';
+    this.nextChannelInfo = nextItem ? `${nextItem.num} - ${nextItem.nombre}` : '';
+    this.cdr.markForCheck();
+  }
+
   async nextItem(): Promise<void> {
     if (this.allItems.length === 0 || !this.currentItem || this.isMovieContent) return;
 
     this.isLoadingChannel = true;
-    this.updateChannelInfo();
+    await this.refreshAdjacentChannelInfo();
 
     try {
-      const currentNum = this.currentItem.num || 0;
-      const targetNum = currentNum + 1;
-
-      let nextItem = this.allItems.find(i => i.num === targetNum);
-
-      const maxLoadedNum = Math.max(...this.allItems.map(i => i.num || 0));
-      const remainingItems = maxLoadedNum - currentNum;
-
-      if (!nextItem && remainingItems < this.PRELOAD_THRESHOLD) {
-        await this.loadMoreItemsIfNeeded('next');
-        nextItem = this.allItems.find(i => i.num === targetNum);
-      }
-
-      if (!nextItem) {
-        const candidates = this.allItems.filter(i => (i.num || 0) > currentNum);
-        if (candidates.length > 0) {
-          nextItem = candidates.sort((a, b) => (a.num || 0) - (b.num || 0))[0];
-        }
-      }
+      const nextItem = await this.resolveAdjacentItem('next');
 
       if (nextItem) {
         this.navigateToItem(nextItem);
-      } else if (this.allItems.length > 0) {
-        const firstItem = this.allItems.sort((a, b) => (a.num || 0) - (b.num || 0))[0];
-        this.navigateToItem(firstItem);
       } else {
         this.isLoadingChannel = false;
         this.cdr.markForCheck();
@@ -840,34 +942,13 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
     if (this.allItems.length === 0 || !this.currentItem || this.isMovieContent) return;
 
     this.isLoadingChannel = true;
-    this.updateChannelInfo();
+    await this.refreshAdjacentChannelInfo();
 
     try {
-      const currentNum = this.currentItem.num || 0;
-      const targetNum = currentNum - 1;
-
-      let prevItem = this.allItems.find(i => i.num === targetNum);
-
-      const minLoadedNum = Math.min(...this.allItems.map(i => i.num || 0));
-      const remainingItems = currentNum - minLoadedNum;
-
-      if (!prevItem && remainingItems < this.PRELOAD_THRESHOLD) {
-        await this.loadMoreItemsIfNeeded('prev');
-        prevItem = this.allItems.find(i => i.num === targetNum);
-      }
-
-      if (!prevItem) {
-        const candidates = this.allItems.filter(i => (i.num || 0) < currentNum);
-        if (candidates.length > 0) {
-          prevItem = candidates.sort((a, b) => (b.num || 0) - (a.num || 0))[0];
-        }
-      }
+      const prevItem = await this.resolveAdjacentItem('prev');
 
       if (prevItem) {
         this.navigateToItem(prevItem);
-      } else if (this.allItems.length > 0) {
-        const lastItem = this.allItems.sort((a, b) => (b.num || 0) - (a.num || 0))[0];
-        this.navigateToItem(lastItem);
       } else {
         this.isLoadingChannel = false;
         this.cdr.markForCheck();
@@ -880,91 +961,7 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   private updateChannelInfo(): void {
-    if (!this.currentItem || this.allItems.length === 0) {
-      this.previousChannelInfo = '';
-      this.nextChannelInfo = '';
-      return;
-    }
-
-    const currentNum = this.currentItem.num || 0;
-    const sortedItems = [...this.allItems].sort((a, b) => (a.num || 0) - (b.num || 0));
-
-    const prevItem = [...sortedItems].reverse().find(i => (i.num || 0) < currentNum);
-    const nextItem = sortedItems.find(i => (i.num || 0) > currentNum);
-
-    this.previousChannelInfo = prevItem ? `${prevItem.num} - ${prevItem.nombre}` : '';
-    this.nextChannelInfo = nextItem ? `${nextItem.num} - ${nextItem.nombre}` : '';
-  }
-
-  private loadMoreItemsIfNeeded(direction: 'next' | 'prev'): Promise<void> {
-    return new Promise((resolve) => {
-      if (this.isLoadingMore) {
-        resolve();
-        return;
-      }
-
-      if (direction === 'next') {
-        if (this.currentPage * this.BATCH_SIZE >= this.totalItems) {
-          resolve();
-          return;
-        }
-
-        this.isLoadingMore = true;
-        const nextPage = this.currentPage + 1;
-
-        const loadObservable = this.getLoadObservable(nextPage);
-
-        loadObservable.subscribe({
-          next: (response: any) => {
-            const newItems = response.items.filter(
-              (newItem: ContentItem) => !this.allItems.some(existing => existing.id === newItem.id)
-            );
-            newItems.sort((a: ContentItem, b: ContentItem) => (a.num || 0) - (b.num || 0));
-
-            this.allItems = [...this.allItems, ...newItems];
-            this.currentPage = nextPage;
-            this.isLoadingMore = false;
-
-            resolve();
-          },
-          error: (error: any) => {
-            console.error('Error cargando más items:', error);
-            this.isLoadingMore = false;
-            resolve();
-          }
-        });
-      } else {
-        if (this.currentPage <= 1) {
-          resolve();
-          return;
-        }
-
-        this.isLoadingMore = true;
-        const prevPage = this.currentPage - 1;
-
-        const loadObservable = this.getLoadObservable(prevPage);
-
-        loadObservable.subscribe({
-          next: (response: any) => {
-            const newItems = response.items.filter(
-              (newItem: ContentItem) => !this.allItems.some(existing => existing.id === newItem.id)
-            );
-            newItems.sort((a: ContentItem, b: ContentItem) => (a.num || 0) - (b.num || 0));
-
-            this.allItems = [...newItems, ...this.allItems];
-            this.currentPage = prevPage;
-            this.isLoadingMore = false;
-
-            resolve();
-          },
-          error: (error: any) => {
-            console.error('Error cargando items anteriores:', error);
-            this.isLoadingMore = false;
-            resolve();
-          }
-        });
-      }
-    });
+    void this.refreshAdjacentChannelInfo();
   }
 
   private navigateToItem(item: ContentItem): void {
@@ -989,7 +986,7 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
     this.eventTitle = item.nombre;
     this.currentItemIndex = this.allItems.findIndex(i => i.id === item.id);
 
-    this.updateChannelInfo();
+    void this.refreshAdjacentChannelInfo();
 
     if (this.contentType === 'channels') {
       this.playerState.setChannel(item as IptvChannel);
