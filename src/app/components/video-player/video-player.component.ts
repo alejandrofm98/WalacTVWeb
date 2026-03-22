@@ -354,38 +354,42 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
   // ── Resolución directa por ID ─────────────────────────────────────────────
 
   private async loadItemById(id: string): Promise<void> {
-    // 1. Reutilizar desde playerState si coincide (navegación normal, sin HTTP)
-    const savedItem = this.playerState.getCurrentItem();
-    if (savedItem && String(savedItem.id) === String(id)) {
-      console.log('[direct-player] Item recuperado desde playerState:', savedItem.nombre);
-      await this.setCurrentItem(savedItem);
-      return;
-    }
+  const savedItem = this.playerState.getCurrentItem();
 
-    // 2. URL directa o item no coincide → llamar a /api/content/channels/:id
-    this.isStreamLoading = true;
-    this.cdr.markForCheck();
+  // ← FIX: no reutilizar si stream_url y url están vacíos
+  const savedUrl = (savedItem as any)?.stream_url || (savedItem as any)?.url || '';
+  const canReuse = savedItem &&
+                   String(savedItem.id) === String(id) &&
+                   savedUrl !== '';
 
-    try {
-      const item = await firstValueFrom(this.dataService.getChannel(id));
-      if (item) {
-        console.log('[direct-player] Item cargado por ID:', item.nombre);
-        await this.setCurrentItem(item);
-      } else {
-        console.warn('[direct-player] Canal no encontrado por ID:', id);
-        this.hasError = true;
-        this.errorMessage = 'Canal no encontrado';
-        this.isStreamLoading = false;
-        this.cdr.markForCheck();
-      }
-    } catch (err) {
-      console.error('[direct-player] Error cargando canal por ID:', err);
+  if (canReuse) {
+    console.log('[direct-player] Item recuperado desde playerState:', savedItem.nombre);
+    await this.setCurrentItem(savedItem);
+    return;
+  }
+
+  this.isStreamLoading = true;
+  this.cdr.markForCheck();
+
+  try {
+    const item = await firstValueFrom(this.dataService.getChannel(id));
+    if (item) {
+      console.log('[direct-player] Item cargado por ID:', item.nombre);
+      await this.setCurrentItem(item);
+    } else {
       this.hasError = true;
-      this.errorMessage = 'Error al cargar el canal';
+      this.errorMessage = 'Canal no encontrado';
       this.isStreamLoading = false;
       this.cdr.markForCheck();
     }
+  } catch (err) {
+    console.error('[direct-player] Error cargando canal por ID:', err);
+    this.hasError = true;
+    this.errorMessage = 'Error al cargar el canal';
+    this.isStreamLoading = false;
+    this.cdr.markForCheck();
   }
+}
 
   // ── Búsqueda por slug (fallback para URLs antiguas) ───────────────────────
 
