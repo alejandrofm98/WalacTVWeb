@@ -575,28 +575,109 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
     return channels.find(channel => channel.priority === 0) || channels[0];
   }
 
+  private isChannelItem(item: ContentItem | null): item is IptvChannel {
+    return this.contentType === 'channels' && item !== null;
+  }
+
+  private getChannelCanonicalId(item: Partial<IptvChannel> | null | undefined): string {
+    return this.dataService.getChannelCanonicalId(item);
+  }
+
+  private areSameChannel(
+    left: Partial<IptvChannel> | null | undefined,
+    right: Partial<IptvChannel> | null | undefined
+  ): boolean {
+    if (!left || !right) {
+      return false;
+    }
+
+    if (left.id && right.id && String(left.id) === String(right.id)) {
+      return true;
+    }
+
+    const leftCanonicalId = this.getChannelCanonicalId(left);
+    const rightCanonicalId = this.getChannelCanonicalId(right);
+    if (leftCanonicalId && rightCanonicalId && leftCanonicalId === rightCanonicalId) {
+      return true;
+    }
+
+    return !!left.num && !!right.num && left.num === right.num && !!left.nombre && left.nombre === right.nombre;
+  }
+
+  private upsertChannelInLoadedItems(channel: IptvChannel): void {
+    const existingIndex = this.allItems.findIndex(item => this.isChannelItem(item) && this.areSameChannel(item, channel));
+
+    if (existingIndex >= 0) {
+      this.allItems[existingIndex] = this.dataService.reconcileChannel(
+        this.allItems[existingIndex] as IptvChannel,
+        channel
+      );
+    } else {
+      this.allItems = [...this.allItems, channel];
+    }
+
+    this.allItems.sort((a, b) => (a.num || 0) - (b.num || 0));
+  }
+
+  private async hydrateChannelForNavigation(channel: IptvChannel): Promise<IptvChannel> {
+    if (this.dataService.hasChannelNavigationData(channel)) {
+      return channel;
+    }
+
+    const channelDetail = await firstValueFrom(this.dataService.getChannel(channel.id));
+
+    if (!channelDetail) {
+      return channel;
+    }
+
+    return this.dataService.reconcileChannel(channel, channelDetail);
+  }
+
+  private async ensureCurrentChannelHydrated(): Promise<IptvChannel | null> {
+    if (!this.isChannelItem(this.currentItem)) {
+      return null;
+    }
+
+    const hydratedChannel = await this.hydrateChannelForNavigation(this.currentItem);
+    this.currentItem = hydratedChannel;
+    this.playerState.setChannel(hydratedChannel);
+    this.upsertChannelInLoadedItems(hydratedChannel);
+
+    return hydratedChannel;
+  }
+
   private async setCurrentItem(item: ContentItem): Promise<void> {
-    this.currentItem = item;
+    let resolvedItem = item;
+
+    if (this.isChannelItem(item)) {
+      resolvedItem = await this.hydrateChannelForNavigation(item);
+    }
+
+    this.currentItem = resolvedItem;
     this.isChannelMode = true;
 
     const savedEventTitle = this.playerState.getEventTitle();
     if (!savedEventTitle) {
-      this.eventTitle = item.nombre;
+      this.eventTitle = resolvedItem.nombre;
     }
 
     if (this.contentType === 'channels') {
-      this.playerState.setChannel(item as IptvChannel);
+      this.playerState.setChannel(resolvedItem as IptvChannel);
     } else if (this.contentType === 'movies') {
-      this.playerState.setMovie(item as IptvMovie);
+      this.playerState.setMovie(resolvedItem as IptvMovie);
     } else if (this.contentType === 'series') {
-      this.playerState.setSeries(item as IptvSeries);
+      this.playerState.setSeries(resolvedItem as IptvSeries);
     }
 
     if (!this.itemsLoaded) {
       await this.loadInitialItems();
     }
 
-    await this.ensureItemIsLoaded(item);
+    if (this.isChannelItem(resolvedItem)) {
+      this.upsertChannelInLoadedItems(resolvedItem);
+    }
+
+    await this.ensureItemIsLoaded(resolvedItem);
 
     this.loadStreamFromItem();
 
@@ -609,7 +690,9 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
   private async ensureItemIsLoaded(item: ContentItem): Promise<void> {
     const itemNum = item.num || 0;
 
-    const isLoaded = this.allItems.some(i => i.id === item.id);
+    const isLoaded = this.isChannelItem(item)
+      ? this.allItems.some(loadedItem => this.isChannelItem(loadedItem) && this.areSameChannel(loadedItem, item))
+      : this.allItems.some(loadedItem => loadedItem.id === item.id);
 
     if (isLoaded) {
       return;
@@ -638,13 +721,19 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
 
     await this.loadSpecificPage(estimatedPage);
 
-    const isNowLoaded = this.allItems.some(i => i.id === item.id);
+    const isNowLoaded = this.isChannelItem(item)
+      ? this.allItems.some(loadedItem => this.isChannelItem(loadedItem) && this.areSameChannel(loadedItem, item))
+      : this.allItems.some(loadedItem => loadedItem.id === item.id);
 
     if (!isNowLoaded) {
       for (let page = Math.max(1, estimatedPage - 2); page <= Math.min(maxKnownPage, estimatedPage + 2); page++) {
         if (page === estimatedPage) continue;
         await this.loadSpecificPage(page);
-        if (this.allItems.some(i => i.id === item.id)) {
+        const wasLoaded = this.isChannelItem(item)
+          ? this.allItems.some(loadedItem => this.isChannelItem(loadedItem) && this.areSameChannel(loadedItem, item))
+          : this.allItems.some(loadedItem => loadedItem.id === item.id);
+
+        if (wasLoaded) {
           break;
         }
       }
@@ -754,9 +843,9 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
   private updateCurrentItemIndex(): void {
     if (!this.currentItem) return;
     this.allItems.sort((a, b) => (a.num || 0) - (b.num || 0));
-    this.currentItemIndex = this.allItems.findIndex(
-      i => i.id === this.currentItem!.id
-    );
+    this.currentItemIndex = this.isChannelItem(this.currentItem)
+      ? this.allItems.findIndex(item => this.isChannelItem(item) && this.areSameChannel(item, this.currentItem))
+      : this.allItems.findIndex(item => item.id === this.currentItem!.id);
   }
 
   private isValidPagedItemNumber(value: number): boolean {
@@ -843,6 +932,10 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
       return null;
     }
 
+    if (this.contentType === 'channels') {
+      await this.ensureCurrentChannelHydrated();
+    }
+
     const currentNum = this.currentItem.num || 0;
     const targetNum = direction === 'next' ? currentNum + 1 : currentNum - 1;
 
@@ -886,6 +979,10 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
       return;
     }
 
+    if (this.contentType === 'channels') {
+      await this.ensureCurrentChannelHydrated();
+    }
+
     const currentNum = this.currentItem.num || 0;
 
     const prevTargetNum = currentNum - 1;
@@ -926,7 +1023,7 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
       const nextItem = await this.resolveAdjacentItem('next');
 
       if (nextItem) {
-        this.navigateToItem(nextItem);
+        await this.navigateToItem(nextItem);
       } else {
         this.isLoadingChannel = false;
         this.cdr.markForCheck();
@@ -948,7 +1045,7 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
       const prevItem = await this.resolveAdjacentItem('prev');
 
       if (prevItem) {
-        this.navigateToItem(prevItem);
+        await this.navigateToItem(prevItem);
       } else {
         this.isLoadingChannel = false;
         this.cdr.markForCheck();
@@ -964,11 +1061,17 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
     void this.refreshAdjacentChannelInfo();
   }
 
-  private navigateToItem(item: ContentItem): void {
+  private async navigateToItem(item: ContentItem): Promise<void> {
     if (!item) {
       this.isLoadingChannel = false;
       this.cdr.markForCheck();
       return;
+    }
+
+    let resolvedItem = item;
+
+    if (this.isChannelItem(item)) {
+      resolvedItem = await this.hydrateChannelForNavigation(item);
     }
 
     this.hasError = false;
@@ -982,23 +1085,28 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
     this.showQualitySelector = false;
     this.playerState.clearEvent();
 
-    this.currentItem = item;
-    this.eventTitle = item.nombre;
-    this.currentItemIndex = this.allItems.findIndex(i => i.id === item.id);
+    this.currentItem = resolvedItem;
+    this.eventTitle = resolvedItem.nombre;
+
+    if (this.isChannelItem(resolvedItem)) {
+      this.upsertChannelInLoadedItems(resolvedItem);
+    }
+
+    this.updateCurrentItemIndex();
 
     void this.refreshAdjacentChannelInfo();
 
     if (this.contentType === 'channels') {
-      this.playerState.setChannel(item as IptvChannel);
+      this.playerState.setChannel(resolvedItem as IptvChannel);
     } else if (this.contentType === 'movies') {
-      this.playerState.setMovie(item as IptvMovie);
+      this.playerState.setMovie(resolvedItem as IptvMovie);
     } else if (this.contentType === 'series') {
-      this.playerState.setSeries(item as IptvSeries);
+      this.playerState.setSeries(resolvedItem as IptvSeries);
     }
 
     // ← Incluir el ID en la ruta para resolución directa
-    const slug = slugify(item.nombre);
-    this.router.navigate(['/player', item.id, slug], { replaceUrl: true });
+    const slug = slugify(resolvedItem.nombre);
+    this.router.navigate(['/player', resolvedItem.id, slug], { replaceUrl: true });
 
     this.showChannelOverlay = true;
     if (this.hideChannelOverlayTimeout) {

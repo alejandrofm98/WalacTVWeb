@@ -102,6 +102,40 @@ export class DataService {
   private authService = inject(AuthService);
   private cacheService = inject(CacheService);
 
+  getChannelCanonicalId(channel: Partial<IptvChannel> | null | undefined): string {
+    if (!channel) {
+      return '';
+    }
+
+    return this.resolveChannelCanonicalId(channel as Partial<IptvChannel> & Record<string, unknown>);
+  }
+
+  hasChannelNavigationData(channel: Partial<IptvChannel> | null | undefined): boolean {
+    if (!channel) {
+      return false;
+    }
+
+    const rawChannel = channel as Partial<IptvChannel> & Record<string, unknown>;
+
+    return this.getValidChannelNumber(rawChannel) > 0
+      && !!this.getChannelCanonicalId(channel)
+      && !!(channel.stream_url || channel.url);
+  }
+
+  reconcileChannel(
+    channel: Partial<IptvChannel>,
+    detail?: Partial<IptvChannel> | null
+  ): IptvChannel {
+    const rawChannel = channel as Partial<IptvChannel> & Record<string, unknown>;
+    const rawDetail = (detail || null) as (Partial<IptvChannel> & Record<string, unknown>) | null;
+
+    return this.normalizeChannel({
+      ...rawChannel,
+      ...rawDetail,
+      id: this.getStringValue(rawDetail?.['id']) || this.getStringValue(rawChannel['id'])
+    });
+  }
+
   private getValidChannelNumber(raw: Partial<IptvChannel> & Record<string, unknown>): number {
     const directNumber = this.getPositiveIntegerValue(raw['num']);
     if (directNumber !== null) {
@@ -111,6 +145,14 @@ export class DataService {
     const channelNumber = this.getPositiveIntegerValue(raw['channel_number']);
     if (channelNumber !== null) {
       return channelNumber;
+    }
+
+    const hasCanonicalSource = !!this.getStringValue(raw['provider_id'])
+      || !!this.getStringValue(raw['stream_url'])
+      || !!this.getStringValue(raw['url']);
+    const fallbackIdNumber = this.getPositiveIntegerValue(raw['id']);
+    if (!hasCanonicalSource && fallbackIdNumber !== null) {
+      return fallbackIdNumber;
     }
 
     return 0;
@@ -127,10 +169,35 @@ export class DataService {
       logo: this.getStringValue(raw['logo']) || this.getStringValue(raw['image_url']) || '',
       grupo: this.getStringValue(raw['grupo']) || this.getStringValue(raw['group']) || '',
       country: this.getStringValue(raw['country']) || this.getStringValue(raw['language_label']) || '',
-      provider_id: this.getStringValue(raw['provider_id']) || id,
+      provider_id: this.resolveChannelCanonicalId(raw),
       url: streamUrl,
       stream_url: streamUrl
     };
+  }
+
+  private resolveChannelCanonicalId(raw: Partial<IptvChannel> & Record<string, unknown>): string {
+    const providerId = this.getStringValue(raw['provider_id']);
+    if (providerId) {
+      return providerId;
+    }
+
+    const streamId = this.extractStreamId(this.getStringValue(raw['stream_url']) || this.getStringValue(raw['url']));
+    if (streamId) {
+      return streamId;
+    }
+
+    return this.getStringValue(raw['id']);
+  }
+
+  private extractStreamId(url: string): string {
+    if (!url.trim()) {
+      return '';
+    }
+
+    const lastSegment = url.split('/').filter(Boolean).pop() || '';
+    const sanitizedSegment = lastSegment.split('?')[0]?.split('#')[0] || '';
+
+    return sanitizedSegment.replace(/\.(ts|m3u8|mp4|mkv|avi)$/i, '');
   }
 
   private getStringValue(value: unknown): string {
