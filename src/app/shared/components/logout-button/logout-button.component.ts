@@ -25,11 +25,8 @@ export class LogoutButtonComponent {
 
     try {
       this.isLoading = true;
-      console.log('🚪 Iniciando cierre de sesión...');
 
       await this.authService.logout();
-
-      console.log('✅ Sesión cerrada exitosamente');
 
       // Redirigir al login
       this.router.navigate(['/login']);

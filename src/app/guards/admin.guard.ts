@@ -17,11 +17,9 @@ export const adminGuard: CanActivateFn = (route, state) => {
       }
 
       if (currentUser.role === 'admin') {
-        console.log('✅ Usuario admin verificado:', currentUser.username);
         return true;
       }
 
-      console.log('❌ Usuario no es admin, redirigiendo a /');
       router.navigate(['/']);
       return false;
     })

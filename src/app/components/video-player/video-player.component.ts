@@ -283,14 +283,6 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
       const savedEventChannels = this.playerState.getEventChannels();
       const savedSelectedChannelId = this.playerState.getSelectedChannelId();
 
-      console.log('Recuperando estado:', {
-        id,
-        slug,
-        savedEventTitle,
-        channelsCount: savedEventChannels.length,
-        selectedChannelId: savedSelectedChannelId
-      });
-
       // ── CASO EVENTO: hay evento guardado y el id pertenece a uno de sus canales ──
       if (id && savedEventTitle && savedEventChannels.length > 0) {
         const isEventChannel = savedEventChannels.some(
@@ -298,7 +290,6 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
         );
 
         if (isEventChannel) {
-          console.log('Recuperando evento guardado:', savedEventTitle);
           this.eventChannels = savedEventChannels;
           this.eventTitle = savedEventTitle;
           this.updateQualitySelectors();
@@ -362,7 +353,6 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
                    savedUrl !== '';
 
   if (canReuse) {
-    console.log('[direct-player] Item recuperado desde playerState:', savedItem.nombre);
     await this.setCurrentItem(savedItem);
     return;
   }
@@ -373,7 +363,6 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
   try {
     const item = await firstValueFrom(this.dataService.getChannel(id));
     if (item) {
-      console.log('[direct-player] Item cargado por ID:', item.nombre);
       await this.setCurrentItem(item);
     } else {
       this.hasError = true;
@@ -393,15 +382,6 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
   // ── Búsqueda por slug (fallback para URLs antiguas) ───────────────────────
 
   private async findItemBySlug(slug: string): Promise<void> {
-    console.log('[direct-player] findItemBySlug:start', {
-      slug,
-      itemsLoaded: this.itemsLoaded,
-      allItemsCount: this.allItems.length,
-      totalItems: this.totalItems,
-      totalPages: this.totalPages,
-      contentType: this.contentType
-    });
-
     if (!this.itemsLoaded) {
       await this.loadInitialItems();
     }
@@ -424,7 +404,6 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
       return;
     }
 
-    console.warn('Item no encontrado:', slug);
   }
 
   private findMatchingItem(slug: string): ContentItem | undefined {
@@ -546,7 +525,6 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
 
   private loadEventFromRoute(event: CalendarEvent): void {
     if (!event.canales_resueltos.length) {
-      console.warn('Evento encontrado sin canales resueltos:', event.id);
       return;
     }
 
@@ -716,10 +694,6 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
     }
 
     if (!this.isValidPagedItemNumber(itemNum)) {
-      console.warn('Item sin numero paginable valido. Se omite carga por pagina estimada:', {
-        itemId: item.id,
-        itemNum
-      });
       return;
     }
 
@@ -727,12 +701,6 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
     const maxKnownPage = this.getKnownTotalPages();
 
     if (maxKnownPage < 1 || estimatedPage > maxKnownPage) {
-      console.warn('Pagina estimada fuera del rango real. Se omite carga defensiva:', {
-        itemId: item.id,
-        itemNum,
-        estimatedPage,
-        maxKnownPage
-      });
       return;
     }
 
@@ -1475,7 +1443,6 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
     this.currentExtension = extMatch ? extMatch[0] : '';
 
     this.streamUrl = this.buildStreamUrl(originalUrl, username, password);
-    console.log('Stream URL generado:', this.streamUrl);
 
     this.currentOriginalUrl = this.streamUrl;
     this.availableStreams = [{
@@ -1528,12 +1495,6 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
     }
 
     const finalUrl = `${proxyBaseUrl}/${username}/${password}/${streamId}${extension}`;
-    console.log('🔗 URL construida:', {
-      contentType: this.contentType,
-      extension: extension,
-      streamId: streamId,
-      finalUrl: finalUrl
-    });
     return finalUrl;
   }
 
@@ -1665,12 +1626,10 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
 
     this.startupWatchdogTimeout = window.setTimeout(() => {
       if (!this.canRunStartupRecovery(video)) {
-        console.warn('⏱️ Startup watchdog omitido: HLS aun no esta listo para recovery');
         return;
       }
 
       if (video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA || video.videoWidth === 0) {
-        console.warn('⏱️ Startup watchdog: sin frame tras manifest/level, saltando al live edge');
         const pos = this.hlsPlayer?.liveSyncPosition;
         if (typeof pos === 'number' && Number.isFinite(pos)) {
           try {
@@ -1683,24 +1642,18 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   private logHlsStartupTrace(event: string, data: Record<string, unknown> = {}): void {
-    console.log(`🎯 HLS startup ${event}`, {
-      streamUrl: this.streamUrl,
-      retryCount: this.retryCount,
-      softRecoveryCount: this.softRecoveryCount,
-      ...data
-    });
+    void event;
+    void data;
   }
 
   private triggerSoftLiveRecovery(reason: string, video: HTMLVideoElement): void {
     if (this.contentType !== 'channels' || !this.hlsPlayer) return;
 
     if (!this.canRunStartupRecovery(video)) {
-      console.warn(`⚠️ Recuperacion suave omitida (${reason}): HLS aun no esta listo`);
       return;
     }
 
     if (this.softRecoveryCount >= this.MAX_SOFT_RECOVERIES) {
-      console.warn(`⚠️ Soft recoveries agotados (${reason}). Forzando reload completo.`);
       this.softRecoveryCount = 0;
       this.retryCount = 0;
       this.reloadStream();
@@ -1713,8 +1666,6 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
     this.softRecoveryCount++;
     this.lastSoftRecoveryAt = now;
 
-    console.warn(`⚠️ Recuperacion suave live (${this.softRecoveryCount}/${this.MAX_SOFT_RECOVERIES}): ${reason}`);
-
     const liveSyncPosition = this.hlsPlayer.liveSyncPosition;
     if (typeof liveSyncPosition === 'number' && Number.isFinite(liveSyncPosition)) {
       try {
@@ -1722,8 +1673,7 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
         if (!Number.isFinite(video.currentTime) || drift > 1.5) {
           video.currentTime = liveSyncPosition;
         }
-      } catch (error) {
-        console.warn('No se pudo mover al live edge:', error);
+      } catch {
       }
     }
 
@@ -1732,8 +1682,7 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
         this.hlsPlayer.stopLoad?.();
         this.hlsPlayer.startLoad(-1);
       }
-    } catch (error) {
-      console.warn('Error durante recuperacion suave HLS:', error);
+    } catch {
     }
   }
 
@@ -1757,7 +1706,6 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
 
       const stuckForMs = Date.now() - this.noPlaybackProgressSince;
       if (stuckForMs >= 6000) {
-        console.warn(`🐕 Watchdog: sin progreso por ${stuckForMs}ms, recuperando...`);
         this.triggerSoftLiveRecovery('sin progreso de reproduccion por 6s', video);
         this.noPlaybackProgressSince = Date.now();
         this.lastObservedPlaybackTime = video.currentTime;
@@ -1792,7 +1740,6 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
       : consecutiveRepeats;
 
     if (realConsecutive >= 4) {
-      console.warn(`🔁 Servidor atascado: segmento "${lastFrag}" repetido ${realConsecutive}x. Forzando reconexión completa.`);
       this.recentFragmentIds = [];
       this.retryCount = 0;
       this.reloadStream();
@@ -1808,7 +1755,6 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
 
   private initializePlayer(autoplay: boolean): void {
     if (this.isCasting) {
-      console.log('⏸️ Inicializacion local omitida porque Chromecast esta activo');
       return;
     }
 
@@ -1818,20 +1764,13 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
       return;
     }
 
-    console.log('🎬 Inicializando player:', {
-      url: this.streamUrl,
-      contentType: this.contentType,
-      retryCount: this.retryCount
-    });
-
     this.clearHlsWatchdogs();
     this.removeVideoEventListeners();
 
     if (this.hlsPlayer) {
       try {
         this.hlsPlayer.destroy();
-      } catch (e) {
-        console.warn('Error destruyendo player HLS:', e);
+      } catch {
       }
       this.hlsPlayer = null;
     }
@@ -1852,14 +1791,12 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
     if (libs.Hls && libs.Hls.isSupported()) {
       this.initHlsPlayer(video, this.streamUrl, autoplay, savedMuted, savedVolume);
     } else if (isHLS && video.canPlayType('application/vnd.apple.mpegurl')) {
-      console.log('🍎 HLS nativo del navegador');
       video.src = this.streamUrl;
       video.muted = savedMuted;
       video.volume = savedVolume;
       video.load();
       this.playVideo(video, autoplay, savedMuted, savedVolume);
     } else {
-      console.log('🔧 HTML5 fallback nativo');
       video.src = this.streamUrl;
       video.muted = savedMuted;
       video.volume = savedVolume;
@@ -1881,12 +1818,10 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
       if (playPromise !== undefined) {
         playPromise.catch(error => {
           if (error.name === 'AbortError') {
-            console.warn('Reproduccion interrumpida por una nueva carga de stream');
             return;
           }
 
           if (error.name === 'NotAllowedError' && !wasMuted) {
-            console.log('🔇 Autoplay con sonido bloqueado. Reintentando silenciado...');
             video.muted = true;
             this.isMuted = true;
             this.volume = 0;
@@ -2340,7 +2275,6 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
 
   private reloadStream(): void {
     if (this.isCasting) {
-      console.log('⏸️ Recarga local omitida porque Chromecast esta activo');
       return;
     }
 
@@ -2371,8 +2305,7 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
     if (this.hlsPlayer) {
       try {
         this.hlsPlayer.destroy();
-      } catch (e) {
-        console.warn('Error al destruir HLS player:', e);
+      } catch {
       }
       this.hlsPlayer = null;
     }
@@ -2617,8 +2550,7 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
         this.hlsPlayer.stopLoad?.();
         this.hlsPlayer.detachMedia?.();
         this.hlsPlayer.destroy();
-      } catch (error) {
-        console.warn('Error deteniendo HLS local para Chromecast:', error);
+      } catch {
       }
       this.hlsPlayer = null;
     }

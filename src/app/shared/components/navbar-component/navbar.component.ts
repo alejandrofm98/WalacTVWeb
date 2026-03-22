@@ -48,14 +48,12 @@ export class NavbarComponent implements OnInit {
 
     try {
       this.isLoading = true;
-      console.log('🚪 Cerrando sesión...');
 
       // Limpiar caché al cerrar sesión
       this.cacheService.clear();
 
       await this.authService.logout();
 
-      console.log('✅ Sesión cerrada');
       window.location.href = '/login';
     } catch (error) {
       console.error('❌ Error al cerrar sesión:', error);

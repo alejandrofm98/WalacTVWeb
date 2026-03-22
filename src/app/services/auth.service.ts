@@ -35,14 +35,10 @@ export class AuthService {
   currentUser$ = this.currentUserSubject.asObservable();
   token$ = this.tokenSubject.asObservable();
 
-  private deviceId: string;
-  private activityInterval: ReturnType<typeof setInterval> | null = null;
   private isLoggingIn = false;
   private isManualLogout = false;
 
   constructor() {
-    this.deviceId = this.generateUniqueId();
-    console.log('🆔 Device ID generado:', this.deviceId);
     this.loadStoredSession();
   }
 
@@ -96,10 +92,6 @@ export class AuthService {
     return value && typeof value === 'object' ? (value as Record<string, unknown>) : null;
   }
 
-  private generateUniqueId(): string {
-    return `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-  }
-
   private loadStoredSession(): void {
     const token = localStorage.getItem('iptv_token');
     const user = localStorage.getItem('iptv_user');
@@ -109,7 +101,6 @@ export class AuthService {
         const userData = JSON.parse(user);
         this.tokenSubject.next(token);
         this.currentUserSubject.next(userData);
-        console.log('✅ Sesión restaurada desde localStorage');
         this.startActivityPing();
       } catch {
         this.clearSession();
@@ -156,8 +147,6 @@ export class AuthService {
         this.tokenSubject.next(response.access_token);
         this.currentUserSubject.next(user);
         this.startActivityPing();
-
-        console.log('✅ Login exitoso');
         this.isLoggingIn = false;
 
         return { success: true, user };
@@ -179,8 +168,6 @@ export class AuthService {
   }
 
   async logout(): Promise<void> {
-    console.log('🚪 Cerrando sesión');
-
     this.isManualLogout = true;
     this.stopActivityPing();
 
@@ -227,20 +214,11 @@ export class AuthService {
   }
 
   private startActivityPing(): void {
-    this.stopActivityPing();
-
-    if (!this.isAuthenticated()) return;
-
-    this.activityInterval = setInterval(() => {
-      console.log('⏰ Ping de actividad');
-    }, 30000);
+    return;
   }
 
   private stopActivityPing(): void {
-    if (this.activityInterval) {
-      clearInterval(this.activityInterval);
-      this.activityInterval = null;
-    }
+    return;
   }
 
   getAuthHeaders(): { [header: string]: string } {

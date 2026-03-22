@@ -51,9 +51,7 @@ export class LoginComponent implements OnInit {
       const result = await this.authService.login(this.email, this.password);
 
       if (result.success) {
-        console.log('✅ Login exitoso');
         await this.router.navigate(['/']);
-        console.log('✅ Navegación completada');
       } else {
         this.errorMessage = result.message || 'Error al iniciar sesión';
       }
