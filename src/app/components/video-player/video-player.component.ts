@@ -670,7 +670,7 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
     }
 
     if (!this.itemsLoaded) {
-      await this.loadInitialItems();
+      await this.loadItemsForCurrentItem(resolvedItem);
     }
 
     if (this.isChannelItem(resolvedItem)) {
@@ -685,6 +685,23 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
       this.updateCurrentItemIndex();
       this.updateChannelInfo();
     }
+  }
+
+  private async loadItemsForCurrentItem(item: ContentItem): Promise<void> {
+    if (
+      this.contentType === 'channels'
+      && this.isChannelItem(item)
+      && this.isValidPagedItemNumber(item.num)
+    ) {
+      const targetPage = this.getPageForItemNumber(item.num);
+
+      if (targetPage !== null) {
+        await this.loadSpecificPage(targetPage);
+        return;
+      }
+    }
+
+    await this.loadInitialItems();
   }
 
   private async ensureItemIsLoaded(item: ContentItem): Promise<void> {
@@ -984,6 +1001,15 @@ export class VideoPlayerComponent implements OnInit, AfterViewInit, OnDestroy {
     }
 
     const currentNum = this.currentItem.num || 0;
+    const maxKnownPage = this.getKnownTotalPages();
+
+    if (currentNum <= 1 && maxKnownPage > 0) {
+      await this.loadSpecificPage(maxKnownPage);
+    }
+
+    if (this.totalItems > 0 && currentNum >= this.totalItems) {
+      await this.loadSpecificPage(1);
+    }
 
     const prevTargetNum = currentNum - 1;
     if (prevTargetNum >= 1 && !this.allItems.some(item => item.num === prevTargetNum)) {
