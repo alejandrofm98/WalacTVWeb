@@ -24,7 +24,8 @@ export interface IptvMovie {
   nombre: string;
   logo: string;
   grupo: string;
-  country: string;
+  country?: string;
+  countries?: string[];
   provider_id: string;
   stream_url: string;
 }
@@ -35,7 +36,8 @@ export interface IptvSeries {
   nombre: string;
   logo: string;
   grupo: string;
-  country: string;
+  country?: string;
+  countries?: string[];
   provider_id: string;
   temporada: string;
   episodio: string;
