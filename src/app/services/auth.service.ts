@@ -9,6 +9,7 @@ export interface LoginResponse {
   access_token: string;
   token_type: string;
   role: 'admin' | 'user';
+  iptv_enabled?: boolean;
 }
 
 export interface User {
@@ -18,6 +19,7 @@ export interface User {
   role: string;
   max_connections: number;
   is_active: boolean;
+  iptv_enabled: boolean;
   created_at: string;
 }
 
@@ -98,7 +100,11 @@ export class AuthService {
 
     if (token && user) {
       try {
-        const userData = JSON.parse(user);
+        const parsedUser = JSON.parse(user);
+        const userData = {
+          ...parsedUser,
+          iptv_enabled: parsedUser.iptv_enabled !== false
+        };
         this.tokenSubject.next(token);
         this.currentUserSubject.next(userData);
         this.startActivityPing();
@@ -136,6 +142,7 @@ export class AuthService {
           role: response.role,
           max_connections: 1,
           is_active: true,
+          iptv_enabled: response.iptv_enabled !== false,
           created_at: new Date().toISOString()
         };
 

@@ -39,6 +39,7 @@
           <tr>
             <th></th>
             <th>Username</th>
+            <th>Catálogo</th>
             <th>Estado</th>
             <th>Sesiones</th>
             <th>Max Conexiones</th>
@@ -62,6 +63,13 @@
                 </button>
               </td>
               <td><strong>{{ user.username }}</strong></td>
+              <td>
+                <span class="status-badge"
+                      [class.status-active]="user.iptv_enabled !== false"
+                      [class.status-expiring]="user.iptv_enabled === false">
+                  {{ user.iptv_enabled === false ? 'Catálogo externo' : 'IPTV + catálogo' }}
+                </span>
+              </td>
               <td>
                 <span class="status-badge" [class.status-active]="user.is_active" [class.status-inactive]="!user.is_active">
                   <span class="status-dot"></span>
@@ -97,7 +105,7 @@
             
             <!-- Sessions Row -->
             <tr class="sessions-row" *ngIf="user.expanded && user.sessions.length > 0">
-              <td colspan="8" class="sessions-cell">
+              <td colspan="9" class="sessions-cell">
                 <div class="sessions-panel">
                   <div class="sessions-header">
                     <span class="sessions-title">Dispositivos conectados ({{ user.sessionsCount }})</span>
@@ -146,6 +154,13 @@
       <div class="form-group">
         <label>Max Conexiones Simultáneas</label>
         <input type="number" [(ngModel)]="newMaxConnections" min="1" />
+      </div>
+      <div class="form-group">
+        <label>
+          <input type="checkbox" [(ngModel)]="newIptvEnabled" />
+          Tiene proveedor IPTV contratado
+        </label>
+        <small>Si se desmarca, la cuenta usará el catálogo externo y torrents.</small>
       </div>
       <div class="form-group">
         <label>Fecha de Expiración (opcional)</label>

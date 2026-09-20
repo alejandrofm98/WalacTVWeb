@@ -12,6 +12,7 @@ interface UserResponse {
   role: string;
   max_connections: number;
   is_active: boolean;
+  iptv_enabled?: boolean;
   expires_at?: string;
   created_at: string;
 }
@@ -57,6 +58,7 @@ export class IptvPanelComponent implements OnInit {
   newPassword = '';
   newMaxConnections = 1;
   newExpiresAt = '';
+  newIptvEnabled = true;
 
   playlistUrl = '';
   showPlaylistModal = false;
@@ -163,6 +165,7 @@ export class IptvPanelComponent implements OnInit {
       username: this.newUsername,
       password: this.newPassword,
       max_connections: this.newMaxConnections,
+      iptv_enabled: this.newIptvEnabled,
       role: 'user'
     };
     if (this.newExpiresAt) {
@@ -174,6 +177,7 @@ export class IptvPanelComponent implements OnInit {
       this.newPassword = '';
       this.newMaxConnections = 1;
       this.newExpiresAt = '';
+      this.newIptvEnabled = true;
       this.loadUsers();
       this.loadStats();
     });

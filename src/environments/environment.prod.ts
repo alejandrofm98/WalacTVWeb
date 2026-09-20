@@ -4,5 +4,5 @@ export const environment = {
   apiWalactv: '${API_WALACTV}',
   acestreamHost: '${ACESTREAM_HOST}',
   iptvApiUrl: '${IPTV_API_URL}',
-  adminEmails: (${ADMIN_EMAILS})
+  adminEmails: ['${ADMIN_EMAILS}']
 };
