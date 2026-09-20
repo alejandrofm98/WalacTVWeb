@@ -98,6 +98,9 @@
               <td>
                 <div class="action-buttons">
                   <button class="btn btn-primary btn-sm" (click)="showPlaylist(user.username)">Ver M3U</button>
+                  <button class="btn btn-secondary btn-sm" (click)="toggleIptv(user)">
+                    {{ user.iptv_enabled === false ? 'Activar IPTV' : 'Quitar IPTV' }}
+                  </button>
                   <button class="btn btn-danger btn-sm" (click)="deleteUser(user.id)">Eliminar</button>
                 </div>
               </td>

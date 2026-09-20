@@ -188,6 +188,16 @@ export class IptvPanelComponent implements OnInit {
     this.api.deleteUser(id).subscribe(() => { this.loadUsers(); this.loadStats(); });
   }
 
+  toggleIptv(user: UserResponse): void {
+    const iptvEnabled = user.iptv_enabled === false;
+    const action = iptvEnabled ? 'activar' : 'desactivar';
+    if (!confirm(`¿Quieres ${action} el proveedor IPTV de ${user.username}?`)) return;
+
+    this.api.updateUser(user.id, { iptv_enabled: iptvEnabled }).subscribe(response => {
+      if (response) this.loadUsers();
+    });
+  }
+
   showPlaylist(username: string): void {
     const password = prompt('Ingresa la contraseña del usuario:');
     if (!password) return;
