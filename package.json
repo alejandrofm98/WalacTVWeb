@@ -56,5 +56,10 @@
     "tsx": "^4.21.0",
     "typescript": "~5.9.2",
     "typescript-eslint": "^8.60.1"
+  },
+  "overrides": {
+    "tsx": {
+      "esbuild": "0.28.2"
+    }
   }
 }
